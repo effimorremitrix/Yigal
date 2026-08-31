@@ -13,7 +13,7 @@
     "db:migrate:remote": "wrangler d1 migrations apply tidelane --remote",
     "db:reset:local": "rm -rf .wrangler/state && wrangler d1 migrations apply tidelane --local",
     "test:e2e": "playwright test",
-    "deploy": "npm run build && npx wrangler deploy"
+    "deploy": "wrangler deploy"
   },
   "dependencies": {
     "lucide-react": "^0.474.0",

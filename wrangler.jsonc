@@ -5,6 +5,8 @@
   "name": "yigal",
   "main": "worker/index.ts",
   "compatibility_date": "2026-08-31",
+  // Runs before deploy/dev so CI (Workers Builds) and `wrangler deploy` always have a fresh dist/.
+  "build": { "command": "npm run build" },
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application",
@@ -15,7 +17,7 @@
     {
       "binding": "DB",
       "database_name": "tidelane",
-      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
+      "database_id": "ea19d80a-6d78-4bf3-b050-d72614621db2",
       "migrations_dir": "migrations"
     }
   ]

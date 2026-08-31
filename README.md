@@ -61,13 +61,16 @@ CHROMIUM_PATH=/path/to/chromium npm run test:e2e   # omit CHROMIUM_PATH to use P
 
 Covers: login/logout + bad password, viewer read-only gating, partner org scoping (incl. direct-URL denial), settings persistence, booking + comment + approval persisting across reload, and the public user guide.
 
-## Deploy (one-time setup, then `npm run deploy`)
+## Deploy
+
+The repo is connected to **Cloudflare Workers Builds**: every push deploys automatically. `wrangler.jsonc` declares `build.command = "npm run build"`, so wrangler builds the SPA itself before deploying — CI needs no extra build configuration, and `npm run deploy` works the same locally.
+
+**One-time setup** (already done for this deployment): create the D1 database and seed it —
 
 ```bash
 npx wrangler login
-npx wrangler d1 create tidelane      # copy the printed database_id into wrangler.jsonc
-npm run db:migrate:remote            # applies schema + seed to the remote D1
-npm run deploy
+npx wrangler d1 create tidelane      # put the printed database_id into wrangler.jsonc
+npm run db:migrate:remote            # applies schema + seed to the remote D1 (run once, before first deploy)
 ```
 
-Deploy fails until the `REPLACE_WITH_YOUR_D1_DATABASE_ID` placeholder in `wrangler.jsonc` is replaced.
+CI does not run migrations; after changing `migrations/`, run `npm run db:migrate:remote` manually. A regenerated seed requires wiping/recreating the remote database.
