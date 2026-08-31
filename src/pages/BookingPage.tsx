@@ -1,13 +1,14 @@
 import { useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, Leaf, Minus, Plus, Ship } from 'lucide-react'
 import { useData } from '../context/DataContext'
+import { useAuth } from '../context/AuthContext'
 import { Card } from '../components/ui/Card'
 import { Select } from '../components/ui/inputs'
 import { CONTAINER_TYPES, LANES, PORTS } from '../data/constants'
 import { generateSailingSchedules } from '../data/schedules'
 import { addDays, fmtDate, iso, TODAY } from '../data/random'
-import type { Incoterm, Milestone, SailingSchedule, Shipment } from '../types'
+import type { Incoterm, SailingSchedule } from '../types'
 
 const STEPS = ['Route', 'Cargo', 'Schedule', 'Review']
 
@@ -19,7 +20,8 @@ const CONTAINER_INFO: Record<string, string> = {
 }
 
 export default function BookingPage() {
-  const { addShipment, shipments } = useData()
+  const { createBooking } = useData()
+  const { canWrite } = useAuth()
   const navigate = useNavigate()
 
   const [step, setStep] = useState(0)
@@ -32,6 +34,8 @@ export default function BookingPage() {
   const [weight, setWeight] = useState('18')
   const [selected, setSelected] = useState<SailingSchedule | null>(null)
   const [createdId, setCreatedId] = useState<string | null>(null)
+  const [submitError, setSubmitError] = useState('')
+  const [busy, setBusy] = useState(false)
 
   const destinations = useMemo(
     () => LANES.filter((l) => l.origin === origin).map((l) => l.destination),
@@ -51,83 +55,39 @@ export default function BookingPage() {
 
   const canNext = step === 0 ? Boolean(effectiveDest) : step === 1 ? totalContainers > 0 : step === 2 ? selected !== null : true
 
-  function confirm() {
-    if (!selected) return
-    const lane = LANES.find((l) => l.origin === origin && l.destination === effectiveDest)!
-    const o = PORTS[origin]
-    const d = PORTS[effectiveDest]
-    const n = shipments.length + 1
-    const etd = new Date(selected.etd)
-
-    const plan: { key: Milestone['key']; label: string; location: string; offset: number }[] = [
-      { key: 'booking_confirmed', label: 'Booking confirmed', location: o.name, offset: -Number(readyDays) },
-      { key: 'container_gate_in', label: 'Container gate in', location: `${o.name} terminal`, offset: -3 },
-      { key: 'loaded_on_vessel', label: 'Loaded on vessel', location: `${o.name} terminal`, offset: -1 },
-      { key: 'vessel_departed', label: 'Vessel departed', location: o.name, offset: 0 },
-      ...(lane.via
-        ? [{ key: 'transshipment' as const, label: 'Transshipment', location: PORTS[lane.via].name, offset: Math.round(selected.transitDays * 0.45) }]
-        : []),
-      { key: 'vessel_arrived' as const, label: 'Vessel arrived', location: d.name, offset: selected.transitDays },
-      { key: 'gate_out' as const, label: 'Container gate out', location: `${d.name} terminal`, offset: selected.transitDays + 2 },
-      { key: 'delivered' as const, label: 'Delivered', location: `${d.name} area`, offset: selected.transitDays + 4 },
-    ]
-
-    const containers = Object.entries(quantities).flatMap(([type, count]) =>
-      Array.from({ length: count }, (_, i) => ({
-        number: `TLNU${String(7000000 + n * 137 + i)}`,
-        type: type as Shipment['containers'][number]['type'],
-        sealNumber: `SL${String(400000 + n * 61 + i)}`,
+  async function confirm() {
+    if (!selected || busy) return
+    setSubmitError('')
+    setBusy(true)
+    try {
+      const created = await createBooking({
+        originCode: origin,
+        destinationCode: effectiveDest,
+        incoterm,
+        commodity,
         weightKg: Number(weight) * 1000,
-        status: 'FCL',
-        ddRiskUsd: 0,
-      })),
-    )
-
-    const shipment: Shipment = {
-      id: `new-${n}`,
-      bookingRef: `TL-2026-${String(n + 100).padStart(4, '0')}`,
-      origin: o,
-      destination: d,
-      via: lane.via ? PORTS[lane.via] : undefined,
-      laneId: lane.id,
-      carrier: { name: selected.carrier, scac: selected.scac },
-      vessel: { name: selected.vesselName, imo: `9${String(500000 + n)}`, voyage: selected.voyage },
-      status: 'booking_confirmed',
-      etd: selected.etd,
-      eta: selected.eta,
-      containers,
-      milestones: plan.map((m, i) => ({
-        key: m.key,
-        label: m.label,
-        location: m.location,
-        planned: iso(addDays(etd, m.offset)),
-        actual: i === 0 ? iso(TODAY) : undefined,
-        status: i === 0 ? 'completed' : i === 1 ? 'current' : 'pending',
-      })),
-      documents: [
-        { id: `nd-${n}-1`, type: 'SI', name: 'Shipping Instructions', status: 'draft', uploadedBy: 'Effi Mor', updatedAt: iso(TODAY) },
-        { id: `nd-${n}-2`, type: 'VGM', name: 'VGM Declaration', status: 'draft', uploadedBy: 'Effi Mor', updatedAt: iso(TODAY) },
-      ],
-      parties: [
-        { id: `np-${n}-1`, name: 'Atlas Polymers Ltd', role: 'shipper', contact: 'Effi Mor' },
-        { id: `np-${n}-2`, name: 'Northline Imports BV', role: 'consignee', contact: 'Pieter van Dam' },
-        { id: `np-${n}-3`, name: 'GlobalFreight Partners', role: 'forwarder', contact: 'Amit Shalev' },
-        { id: `np-${n}-4`, name: selected.carrier, role: 'carrier', contact: 'Operations desk' },
-      ],
-      comments: [
-        { id: `nc-${n}`, author: 'Operations desk', role: 'carrier', text: 'Booking confirmed on requested sailing. Cut-off is 48h before ETD.', at: iso(TODAY) },
-      ],
-      incoterm,
-      commodity,
-      co2Tons: Math.round(totalTeu * selected.co2PerTeuTons * 10) / 10,
-      freightCostUsd: totalTeu * selected.costPerTeuUsd,
-      onTime: true,
-      progress: 0,
+        containers: quantities,
+        schedule: {
+          carrier: selected.carrier,
+          scac: selected.scac,
+          vesselName: selected.vesselName,
+          voyage: selected.voyage,
+          etd: selected.etd,
+          eta: selected.eta,
+          transitDays: selected.transitDays,
+          co2PerTeuTons: selected.co2PerTeuTons,
+          costPerTeuUsd: selected.costPerTeuUsd,
+        },
+      })
+      setCreatedId(created.id)
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Booking failed — please try again.')
+    } finally {
+      setBusy(false)
     }
-
-    addShipment(shipment)
-    setCreatedId(shipment.id)
   }
+
+  if (!canWrite) return <Navigate to="/" replace />
 
   if (createdId) {
     return (
@@ -358,6 +318,9 @@ export default function BookingPage() {
                 </div>
               ))}
             </dl>
+            {submitError && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">{submitError}</div>
+            )}
             <p className="text-[12px] text-slate-400">
               Confirming sends the booking request to the carrier and notifies all parties. (Demo — no real booking is made.)
             </p>
@@ -384,11 +347,12 @@ export default function BookingPage() {
             </button>
           ) : (
             <button
-              onClick={confirm}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-5 py-2 text-[13px] font-medium text-white hover:bg-emerald-700"
+              onClick={() => void confirm()}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-5 py-2 text-[13px] font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
             >
               <Check size={15} />
-              Confirm booking
+              {busy ? 'Confirming…' : 'Confirm booking'}
             </button>
           )}
         </div>

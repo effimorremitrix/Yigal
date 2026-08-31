@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Plus } from 'lucide-react'
 import { useData } from '../context/DataContext'
+import { useAuth } from '../context/AuthContext'
 import { Card } from '../components/ui/Card'
 import { SearchInput, Select } from '../components/ui/inputs'
 import ShipmentTable from '../components/shipments/ShipmentTable'
@@ -11,6 +12,7 @@ import type { ShipmentStatus } from '../types'
 
 export default function ShipmentsPage() {
   const { shipments } = useData()
+  const { canWrite } = useAuth()
   const [q, setQ] = useState('')
   const [status, setStatus] = useState('all')
   const [carrier, setCarrier] = useState('all')
@@ -55,13 +57,15 @@ export default function ShipmentsPage() {
             {filtered.length} of {shipments.length} shipments
           </span>
         </div>
-        <Link
-          to="/booking"
-          className="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-3.5 py-2 text-[13px] font-medium text-white transition-colors hover:bg-brand-700"
-        >
-          <Plus size={15} />
-          New booking
-        </Link>
+        {canWrite && (
+          <Link
+            to="/booking"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-3.5 py-2 text-[13px] font-medium text-white transition-colors hover:bg-brand-700"
+          >
+            <Plus size={15} />
+            New booking
+          </Link>
+        )}
       </div>
       <Card>
         <ShipmentTable shipments={filtered} />

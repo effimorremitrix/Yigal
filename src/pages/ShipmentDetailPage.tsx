@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { AlertTriangle, ArrowLeft, ArrowRight, Building2, Download, Send, ShieldCheck } from 'lucide-react'
 import { useData } from '../context/DataContext'
+import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
 import Tabs from '../components/ui/Tabs'
 import { DocStatusBadge, ShipmentStatusBadge } from '../components/ui/StatusBadge'
@@ -11,15 +12,20 @@ import { EmptyState } from '../components/ui/inputs'
 
 export default function ShipmentDetailPage() {
   const { id } = useParams()
-  const { getShipment, setDocumentStatus, addComment } = useData()
+  const { getShipment, approveDocument, addComment, loading } = useData()
+  const { canWrite } = useAuth()
   const [tab, setTab] = useState('containers')
   const [draft, setDraft] = useState('')
+  const [sending, setSending] = useState(false)
 
   const s = id ? getShipment(id) : undefined
   if (!s) {
     return (
       <Card>
-        <EmptyState title="Shipment not found" subtitle="It may have been removed from this demo dataset." />
+        <EmptyState
+          title={loading ? 'Loading shipment…' : 'Shipment not found'}
+          subtitle={loading ? undefined : 'It may not exist, or your organization is not a party to it.'}
+        />
       </Card>
     )
   }
@@ -157,9 +163,9 @@ export default function ShipmentDetailPage() {
                   >
                     <Download size={14} />
                   </button>
-                  {d.status === 'pending_approval' && (
+                  {d.status === 'pending_approval' && canWrite && (
                     <button
-                      onClick={() => setDocumentStatus(s.id, d.id, 'approved')}
+                      onClick={() => void approveDocument(s.id, d.id)}
                       className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-emerald-700"
                     >
                       <ShieldCheck size={13} />
@@ -216,30 +222,38 @@ export default function ShipmentDetailPage() {
                   </div>
                 ))}
             </div>
-            <form
-              className="mt-5 flex gap-2"
-              onSubmit={(e) => {
-                e.preventDefault()
-                if (draft.trim()) {
-                  addComment(s.id, 'Effi Mor', draft.trim())
-                  setDraft('')
-                }
-              }}
-            >
-              <input
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                placeholder="Write a message to all parties…"
-                className="flex-1 rounded-lg border border-slate-200 px-3.5 py-2.5 text-[13px] focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-600/15"
-              />
-              <button
-                type="submit"
-                className="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2.5 text-[13px] font-medium text-white transition-colors hover:bg-brand-700"
+            {canWrite && (
+              <form
+                className="mt-5 flex gap-2"
+                onSubmit={async (e) => {
+                  e.preventDefault()
+                  const text = draft.trim()
+                  if (!text || sending) return
+                  setSending(true)
+                  try {
+                    await addComment(s.id, text)
+                    setDraft('')
+                  } finally {
+                    setSending(false)
+                  }
+                }}
               >
-                <Send size={14} />
-                Send
-              </button>
-            </form>
+                <input
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  placeholder="Write a message to all parties…"
+                  className="flex-1 rounded-lg border border-slate-200 px-3.5 py-2.5 text-[13px] focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-600/15"
+                />
+                <button
+                  type="submit"
+                  disabled={sending}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2.5 text-[13px] font-medium text-white transition-colors hover:bg-brand-700 disabled:opacity-50"
+                >
+                  <Send size={14} />
+                  Send
+                </button>
+              </form>
+            )}
           </div>
         )}
       </Card>

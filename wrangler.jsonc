@@ -1,10 +1,22 @@
 {
-  // Cloudflare Workers config — deploys the built SPA as static assets.
-  // Redeploy with: npm run deploy (requires `wrangler login` or CLOUDFLARE_API_TOKEN)
+  // Cloudflare Workers config — one worker serves the SPA (static assets) and the /api backend.
+  // First-time setup: `npx wrangler d1 create tidelane`, paste the database_id below,
+  // then `npm run db:migrate:remote` and `npm run deploy`.
   "name": "yigal",
+  "main": "worker/index.ts",
   "compatibility_date": "2026-08-31",
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "single-page-application"
-  }
+    "not_found_handling": "single-page-application",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "tidelane",
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ]
 }
