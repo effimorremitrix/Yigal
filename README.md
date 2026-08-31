@@ -25,3 +25,11 @@ npm install
 npm run dev      # http://localhost:5173
 npm run build    # type-check + production build to dist/
 ```
+
+## Deploy
+
+Live at https://yigal.effi-mor-e04.workers.dev/ (Cloudflare Workers, static assets with SPA fallback — see `wrangler.jsonc`).
+
+```bash
+npm run deploy   # build + wrangler deploy (needs `wrangler login` or CLOUDFLARE_API_TOKEN)
+```
