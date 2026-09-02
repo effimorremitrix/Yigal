@@ -1,14 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, Leaf, Minus, Plus, Ship } from 'lucide-react'
 import { useData } from '../context/DataContext'
 import { useAuth } from '../context/AuthContext'
 import { Card } from '../components/ui/Card'
 import { Select } from '../components/ui/inputs'
+import { apiFetch } from '../lib/api'
 import { CONTAINER_TYPES, LANES, PORTS } from '../data/constants'
-import { generateSailingSchedules } from '../data/schedules'
 import { addDays, fmtDate, iso, TODAY } from '../data/random'
-import type { Incoterm, SailingSchedule } from '../types'
+import type { Incoterm, SailingSchedule, ScheduleResult } from '../types'
 
 const STEPS = ['Route', 'Cargo', 'Schedule', 'Review']
 
@@ -43,12 +43,28 @@ export default function BookingPage() {
   )
   const effectiveDest = destinations.includes(destination) ? destination : destinations[0]
 
-  const readyDate = addDays(TODAY, Number(readyDays))
-  const schedules = useMemo(
-    () => generateSailingSchedules(origin, effectiveDest, readyDate),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [origin, effectiveDest, readyDays],
-  )
+  // Sailings come from the INTTRA connector (mock adapter until credentials are configured).
+  const [schedules, setSchedules] = useState<SailingSchedule[] | null>(null)
+  const [schedError, setSchedError] = useState('')
+  const [schedTick, setSchedTick] = useState(0)
+  useEffect(() => {
+    if (!canWrite) return
+    let cancelled = false
+    setSchedules(null)
+    setSchedError('')
+    setSelected(null)
+    const q = new URLSearchParams({ origin, destination: effectiveDest, ready: iso(addDays(TODAY, Number(readyDays))) })
+    apiFetch<ScheduleResult>(`/api/integrations/inttra/schedules?${q}`)
+      .then((r) => {
+        if (!cancelled) setSchedules(r.schedules)
+      })
+      .catch((err) => {
+        if (!cancelled) setSchedError(err instanceof Error ? err.message : 'Could not load sailings')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [origin, effectiveDest, readyDays, canWrite, schedTick])
 
   const totalContainers = Object.values(quantities).reduce((a, b) => a + b, 0)
   const totalTeu = Object.entries(quantities).reduce((a, [t, n]) => a + n * (t === '20DV' ? 1 : 2), 0)
@@ -245,7 +261,16 @@ export default function BookingPage() {
             <h2 className="text-[15px] font-semibold text-slate-900">
               Choose a sailing — {PORTS[origin].name} → {PORTS[effectiveDest].name}
             </h2>
-            {schedules.map((sch) => {
+            {schedules === null && !schedError && <div className="py-8 text-center text-[12px] text-slate-400">Loading sailings…</div>}
+            {schedError && (
+              <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">
+                <span>{schedError}</span>
+                <button type="button" onClick={() => setSchedTick((t) => t + 1)} className="font-medium underline">
+                  Retry
+                </button>
+              </div>
+            )}
+            {(schedules ?? []).map((sch) => {
               const isSel = selected?.id === sch.id
               return (
                 <button

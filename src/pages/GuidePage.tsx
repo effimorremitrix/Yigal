@@ -16,7 +16,7 @@ import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
 
 const ACCOUNTS = [
-  { email: 'effi@tidelane.demo', role: 'Admin', org: 'Tidelane (internal)', sees: 'Everything, plus user management in Settings' },
+  { email: 'effi@tidelane.demo', role: 'Admin', org: 'Tidelane (internal)', sees: 'Everything, plus user management and integrations in Settings' },
   { email: 'ops@tidelane.demo', role: 'Operations', org: 'Tidelane (internal)', sees: 'All shipments; can book, approve documents, comment' },
   { email: 'viewer@tidelane.demo', role: 'Viewer', org: 'Tidelane (internal)', sees: 'All shipments, read-only' },
   { email: 'dana@atlaspolymers.demo', role: 'Operations', org: 'Atlas Polymers (shipper)', sees: 'Only shipments where Atlas Polymers is a party' },

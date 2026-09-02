@@ -1,5 +1,6 @@
 import { createSession, destroySession, getSessionUser, requireRole, requireUser, verifyPassword } from './auth'
 import { HttpError, json, type Env } from './env'
+import { getCustomsStatus, listIntegrations, putIntegration, searchSchedules, testIntegration } from './integrations/api'
 import { Router, type RequestContext } from './router'
 import { addComment, approveDocument, createShipment, getShipment, listShipments } from './shipments'
 import { getSettings, putSettings } from './settings'
@@ -67,6 +68,26 @@ router.add('POST', '/api/users', async ({ request, env, user }) => {
 router.add('PATCH', '/api/users/:id', async ({ request, env, user, params }) =>
   patchUser(env, requireRole(user, ['admin']), Number(params.id), await body(request)),
 )
+
+// Integrations (CBP ACE customs, INTTRA ocean network): admin manages, ops+admin read.
+router.add('GET', '/api/integrations', async ({ env, user }) => {
+  requireRole(user, ['admin', 'ops'])
+  return listIntegrations(env)
+})
+router.add('PUT', '/api/integrations/:provider', async ({ request, env, user, params }) =>
+  putIntegration(env, requireRole(user, ['admin']), params.provider, await body(request)),
+)
+router.add('POST', '/api/integrations/:provider/test', async ({ env, user, params }) => {
+  requireRole(user, ['admin'])
+  return testIntegration(env, params.provider)
+})
+router.add('GET', '/api/integrations/ace/shipments/:id/customs', async ({ env, user, params }) =>
+  getCustomsStatus(env, requireRole(user, ['admin', 'ops']), params.id),
+)
+router.add('GET', '/api/integrations/inttra/schedules', async ({ request, env, user }) => {
+  requireRole(user, ['admin', 'ops'])
+  return searchSchedules(env, request)
+})
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {

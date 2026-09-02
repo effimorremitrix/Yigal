@@ -14,5 +14,5 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["worker", "src/types.ts", "src/data/constants.ts", "src/data/random.ts", "src/data/generator.ts"]
+  "include": ["worker", "src/types.ts", "src/data/constants.ts", "src/data/random.ts", "src/data/generator.ts", "src/data/schedules.ts"]
 }

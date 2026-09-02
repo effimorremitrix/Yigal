@@ -57,6 +57,8 @@ test('viewer has no write affordances', async ({ page }) => {
   await page.goto('/settings')
   await expect(page.getByRole('button', { name: 'Preferences' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Users & Organizations' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Integrations' })).toHaveCount(0)
+  expect((await page.request.put('/api/integrations/ace', { data: { enabled: false } })).status()).toBe(403)
 })
 
 test('partner user sees only their org shipments', async ({ page }) => {
@@ -94,12 +96,63 @@ test('settings persist across reload', async ({ page }) => {
   await expect(page.getByTestId('profile-title')).toHaveValue('Head of Global Logistics')
 })
 
+test('admin manages integrations in mock mode', async ({ page }) => {
+  await login(page, 'effi@tidelane.demo')
+  await page.goto('/settings')
+  await page.getByRole('button', { name: 'Integrations' }).click()
+  const ace = page.getByTestId('integration-ace')
+  const inttra = page.getByTestId('integration-inttra')
+  await expect(ace).toBeVisible()
+  await expect(inttra).toBeVisible()
+
+  // No credentials configured: live is not selectable, mock health check passes and is persisted.
+  await expect(page.getByTestId('integration-inttra-mode-live')).toBeDisabled()
+  await inttra.getByRole('button', { name: 'Test connection' }).click()
+  await expect(page.getByTestId('integration-inttra-check')).toContainText('OK · mock')
+  await page.reload()
+  await page.getByRole('button', { name: 'Integrations' }).click()
+  await expect(page.getByTestId('integration-inttra-check')).toContainText('OK · mock')
+
+  // The API reports secret presence only, never values.
+  const list = (await (await page.request.get('/api/integrations')).json()) as { secrets: Record<string, unknown>[] }[]
+  expect(list).toHaveLength(2)
+  for (const c of list) for (const s of c.secrets) expect(Object.keys(s).sort()).toEqual(['name', 'present'])
+  expect((await page.request.put('/api/integrations/inttra', { data: { mode: 'live' } })).status()).toBe(400)
+
+  // Customs status for a US-bound shipment, and the kill switch.
+  const shipments = (await (await page.request.get('/api/shipments')).json()) as { id: string; destination: { country: string } }[]
+  const us = shipments.find((s) => s.destination.country === 'United States')!
+  expect(us).toBeTruthy()
+  const customs = await page.request.get(`/api/integrations/ace/shipments/${us.id}/customs`)
+  expect(customs.status()).toBe(200)
+  expect(((await customs.json()) as { applicable: boolean }).applicable).toBe(true)
+
+  await ace.getByText('Enabled', { exact: true }).click()
+  await expect(page.getByTestId('integration-ace-status')).toHaveText('Off')
+  await page.reload()
+  await page.getByRole('button', { name: 'Integrations' }).click()
+  await expect(page.getByTestId('integration-ace-status')).toHaveText('Off')
+  expect((await page.request.get(`/api/integrations/ace/shipments/${us.id}/customs`)).status()).toBe(503)
+
+  await page.getByTestId('integration-ace').getByText('Enabled', { exact: true }).click()
+  await expect(page.getByTestId('integration-ace-status')).toHaveText('On · mock')
+  expect((await page.request.get(`/api/integrations/ace/shipments/${us.id}/customs`)).status()).toBe(200)
+
+  // Schedules come from the INTTRA connector and are deterministic.
+  const sched = (await (
+    await page.request.get('/api/integrations/inttra/schedules?origin=CNSHA&destination=NLRTM&ready=2026-09-07T09:00:00.000Z')
+  ).json()) as { source: string; schedules: { id: string }[] }
+  expect(sched.source).toBe('mock')
+  expect(sched.schedules.map((s) => s.id).sort()).toEqual([0, 1, 2, 3, 4].map((i) => `sch-CNSHA-NLRTM-${i}`))
+})
+
 test('ops user books a shipment that persists, with comment and approval', async ({ page }) => {
   await login(page, 'ops@tidelane.demo')
   await page.goto('/booking')
 
   await page.getByRole('button', { name: 'Continue' }).click() // route defaults
   await page.getByRole('button', { name: 'Continue' }).click() // cargo defaults (2x 40DV)
+  await expect(page.locator('button', { hasText: /voy \d/ })).toHaveCount(5) // sailings loaded from the INTTRA connector
   await page.locator('button', { hasText: /voy \d/ }).first().click()
   await page.getByRole('button', { name: 'Continue' }).click()
   await page.getByRole('button', { name: 'Confirm booking' }).click()

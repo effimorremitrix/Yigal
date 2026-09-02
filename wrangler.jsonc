@@ -7,6 +7,9 @@
   "compatibility_date": "2026-08-31",
   // Runs before deploy/dev so CI (Workers Builds) and `wrangler deploy` always have a fresh dist/.
   "build": { "command": "npm run build" },
+  // Non-secret integration config. Secrets (ACE_API_KEY, INTTRA_CLIENT_ID, INTTRA_API_KEY) are set with
+  // `wrangler secret put <NAME>` (or .dev.vars locally), never here. Empty base URL = provider cannot go live.
+  "vars": { "ACE_BASE_URL": "", "INTTRA_BASE_URL": "" },
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application",

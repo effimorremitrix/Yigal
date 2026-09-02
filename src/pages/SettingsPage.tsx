@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Check, UserPlus } from 'lucide-react'
+import { UserPlus } from 'lucide-react'
 import { useAuth, type UserSettings } from '../context/AuthContext'
 import { apiFetch } from '../lib/api'
 import { Card, CardHeader } from '../components/ui/Card'
 import Tabs from '../components/ui/Tabs'
-import { Select } from '../components/ui/inputs'
+import { SavedFlash, Select, Toggle } from '../components/ui/inputs'
+import IntegrationsTab from '../components/settings/IntegrationsTab'
 
 const TIMEZONES = ['UTC', 'Asia/Jerusalem', 'Europe/Paris', 'Europe/London', 'America/New_York', 'America/Los_Angeles', 'Asia/Shanghai', 'Asia/Singapore']
 const DATE_FORMATS = ['dd MMM yyyy', 'dd/MM/yyyy', 'MM/dd/yyyy', 'yyyy-MM-dd']
@@ -15,16 +16,6 @@ const LANDING_PAGES = [
   { value: '/documents', label: 'Documents' },
   { value: '/analytics', label: 'Analytics' },
 ]
-
-function SavedFlash({ show }: { show: boolean }) {
-  if (!show) return null
-  return (
-    <span className="inline-flex items-center gap-1 text-[12px] font-medium text-emerald-600">
-      <Check size={13} />
-      Saved
-    </span>
-  )
-}
 
 const inputCls =
   'w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-600/15'
@@ -76,24 +67,6 @@ function ProfileTab() {
         <SavedFlash show={saved} />
       </div>
     </form>
-  )
-}
-
-function Toggle({ label, hint, checked, onChange }: { label: string; hint: string; checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      onClick={() => onChange(!checked)}
-      className="flex w-full items-center justify-between rounded-lg border border-slate-200 px-4 py-3 text-left hover:bg-slate-50"
-    >
-      <span>
-        <span className="block text-[13px] font-medium text-slate-800">{label}</span>
-        <span className="block text-[11px] text-slate-400">{hint}</span>
-      </span>
-      <span className={`relative h-5 w-9 rounded-full transition-colors ${checked ? 'bg-brand-600' : 'bg-slate-300'}`}>
-        <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${checked ? 'left-[18px]' : 'left-0.5'}`} />
-      </span>
-    </button>
   )
 }
 
@@ -310,18 +283,19 @@ export default function SettingsPage() {
   const tabs = [
     { id: 'profile', label: 'Profile' },
     { id: 'preferences', label: 'Preferences' },
-    ...(isAdmin ? [{ id: 'admin', label: 'Users & Organizations' }] : []),
+    ...(isAdmin ? [{ id: 'admin', label: 'Users & Organizations' }, { id: 'integrations', label: 'Integrations' }] : []),
   ]
 
   return (
     <Card>
-      <CardHeader title="Settings" subtitle="Your profile, preferences and workspace administration" />
+      <CardHeader title="Settings" subtitle="Your profile, preferences, workspace administration and integrations" />
       <div className="px-5 pt-2">
         <Tabs tabs={tabs} active={tab} onChange={setTab} />
       </div>
       {tab === 'profile' && <ProfileTab />}
       {tab === 'preferences' && <PreferencesTab />}
       {tab === 'admin' && isAdmin && <AdminTab />}
+      {tab === 'integrations' && isAdmin && <IntegrationsTab />}
     </Card>
   )
 }
