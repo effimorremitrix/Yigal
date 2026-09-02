@@ -2,7 +2,7 @@ import { HttpError, json, type Env, type SessionUser } from './env'
 import { LANES, PORTS } from '../src/data/constants'
 import type { Milestone, Shipment } from '../src/types'
 
-interface ShipmentRow {
+export interface ShipmentRow {
   id: string
   booking_ref: string
   origin_code: string
@@ -123,7 +123,7 @@ export async function listShipments(env: Env, user: SessionUser): Promise<Respon
   return json(await assemble(env, rows.results))
 }
 
-async function fetchVisible(env: Env, user: SessionUser, id: string): Promise<ShipmentRow> {
+export async function fetchVisible(env: Env, user: SessionUser, id: string): Promise<ShipmentRow> {
   const scope = scopeClause(user)
   const where = scope.where ? `${scope.where} AND s.id = ?` : 'WHERE s.id = ?'
   const row = await env.DB.prepare(`SELECT s.* FROM shipments s ${where}`)

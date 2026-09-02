@@ -1,0 +1,7 @@
+# Copy to .dev.vars (git-ignored); `wrangler dev` loads it automatically.
+# Leave a value blank or the line absent to keep that provider in mock mode.
+ACE_BASE_URL=
+ACE_API_KEY=
+INTTRA_BASE_URL=
+INTTRA_CLIENT_ID=
+INTTRA_API_KEY=

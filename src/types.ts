@@ -115,3 +115,86 @@ export interface SailingSchedule {
   co2PerTeuTons: number
   costPerTeuUsd: number
 }
+
+// ---- Integrations (CBP ACE customs, E2open INTTRA ocean network) ----
+// Vendor-neutral DTOs. Real vendor payloads are mapped into these inside the worker adapters.
+
+export type IntegrationProvider = 'ace' | 'inttra'
+export type IntegrationMode = 'mock' | 'live'
+
+export interface IntegrationHealth {
+  ok: boolean
+  mode: IntegrationMode // mode the check actually ran in
+  message: string
+  checkedAt: string
+  latencyMs?: number
+}
+
+export interface IntegrationConfig {
+  provider: IntegrationProvider
+  label: string
+  enabled: boolean
+  mode: IntegrationMode // what the admin requested
+  effectiveMode: IntegrationMode // what the worker will actually use (live only with full credentials)
+  baseUrl: string | null
+  baseUrlVar: string
+  secrets: { name: string; present: boolean }[] // presence only, never values
+  liveAvailable: boolean
+  lastCheck: IntegrationHealth | null
+  updatedAt: string
+}
+
+// ACE: customs filing status for one shipment (ISF 10+2, entry summary, release)
+export type IsfStatus = 'not_required' | 'not_filed' | 'filed' | 'accepted' | 'rejected'
+export type EntryStatus = 'not_filed' | 'filed' | 'accepted'
+export type ReleaseStatus = 'pending' | 'released' | 'hold' | 'exam'
+
+export interface CustomsEvent {
+  code: string
+  description: string
+  at: string
+}
+
+export interface CustomsStatus {
+  shipmentId: string
+  applicable: boolean // false for non-US-import shipments
+  entryNumber: string | null
+  isfTransactionNumber: string | null
+  isfStatus: IsfStatus
+  entryStatus: EntryStatus
+  releaseStatus: ReleaseStatus
+  lastEvent: CustomsEvent | null
+  source: IntegrationMode
+  retrievedAt: string
+}
+
+// INTTRA: schedules reuse SailingSchedule; plus tracking events and booking acknowledgement
+export interface ScheduleQuery {
+  origin: string
+  destination: string
+  readyDate: string
+}
+
+export interface ScheduleResult {
+  source: IntegrationMode
+  schedules: SailingSchedule[]
+}
+
+export interface TrackingEvent {
+  id: string
+  shipmentId: string
+  code: MilestoneKey
+  description: string
+  location: string
+  at: string
+  source: IntegrationMode
+}
+
+export interface BookingAck {
+  bookingRef: string
+  carrierBookingNumber: string | null
+  status: 'pending' | 'confirmed' | 'rejected'
+  message: string
+  at: string
+  source: IntegrationMode
+}
