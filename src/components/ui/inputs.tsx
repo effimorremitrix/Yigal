@@ -1,6 +1,10 @@
 import { Check, Search } from 'lucide-react'
 import type { ChangeEvent } from 'react'
 
+// Shared text-input styling for the settings forms.
+export const inputCls =
+  'w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-600/15'
+
 export function SearchInput({
   value,
   onChange,

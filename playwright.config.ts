@@ -14,7 +14,8 @@ export default defineConfig({
     ...(process.env.CHROMIUM_PATH ? { launchOptions: { executablePath: process.env.CHROMIUM_PATH } } : {}),
   },
   webServer: {
-    command: 'npx wrangler dev --port 8787',
+    // CREDENTIALS_KEY enables the credential storage the integrations test exercises; test-only value.
+    command: 'npx wrangler dev --port 8787 --var CREDENTIALS_KEY:e2e-credentials-key',
     url: 'http://localhost:8787/login',
     reuseExistingServer: true,
     timeout: 60000,
