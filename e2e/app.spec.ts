@@ -113,10 +113,10 @@ test('admin manages integrations in mock mode', async ({ page }) => {
   await page.getByRole('button', { name: 'Integrations' }).click()
   await expect(page.getByTestId('integration-inttra-check')).toContainText('OK · mock')
 
-  // The API reports secret presence only, never values.
+  // The API reports secret presence, source and a hint, never values.
   const list = (await (await page.request.get('/api/integrations')).json()) as { secrets: Record<string, unknown>[] }[]
   expect(list).toHaveLength(2)
-  for (const c of list) for (const s of c.secrets) expect(Object.keys(s).sort()).toEqual(['name', 'present'])
+  for (const c of list) for (const s of c.secrets) expect(Object.keys(s).sort()).toEqual(['hint', 'name', 'present', 'source', 'updatedAt'])
   expect((await page.request.put('/api/integrations/inttra', { data: { mode: 'live' } })).status()).toBe(400)
 
   // Customs status for a US-bound shipment, and the kill switch.
@@ -144,6 +144,62 @@ test('admin manages integrations in mock mode', async ({ page }) => {
   ).json()) as { source: string; schedules: { id: string }[] }
   expect(sched.source).toBe('mock')
   expect(sched.schedules.map((s) => s.id).sort()).toEqual([0, 1, 2, 3, 4].map((i) => `sch-CNSHA-NLRTM-${i}`))
+})
+
+test('admin saves and clears integration credentials from the UI', async ({ page }) => {
+  const CLIENT_ID = 'inttra-client-e2e-9876'
+  const API_KEY = 'inttra-secret-e2e-5432'
+
+  await login(page, 'effi@tidelane.demo')
+  await page.goto('/settings')
+  await page.getByRole('button', { name: 'Integrations' }).click()
+  const inttra = page.getByTestId('integration-inttra')
+  await expect(page.getByTestId('integration-inttra-mode-live')).toBeDisabled()
+
+  await page.getByTestId('integration-inttra-baseurl').fill('https://stage.inttra.example')
+  await page.getByTestId('integration-inttra-secret-INTTRA_CLIENT_ID').fill(CLIENT_ID)
+  await page.getByTestId('integration-inttra-secret-INTTRA_API_KEY').fill(API_KEY)
+  await page.getByTestId('integration-inttra-save-credentials').click()
+
+  // Stored: live becomes selectable and the card shows a hint, never the key.
+  await expect(page.getByTestId('integration-inttra-mode-live')).toBeEnabled()
+  await expect(inttra).toContainText('Saved ····5432')
+  await expect(inttra).not.toContainText(API_KEY)
+
+  // The API never returns a stored value, and the values survive a reload.
+  const raw = await (await page.request.get('/api/integrations')).text()
+  expect(raw).not.toContain(API_KEY)
+  expect(raw).not.toContain(CLIENT_ID)
+  const inttraCfg = ((await (await page.request.get('/api/integrations')).json()) as {
+    provider: string
+    baseUrl: string
+    baseUrlSource: string
+    liveAvailable: boolean
+    secrets: { name: string; present: boolean; source: string; hint: string }[]
+  }[]).find((c) => c.provider === 'inttra')!
+  expect(inttraCfg.liveAvailable).toBe(true)
+  expect(inttraCfg.baseUrl).toBe('https://stage.inttra.example')
+  expect(inttraCfg.baseUrlSource).toBe('db')
+  expect(inttraCfg.secrets.every((s) => s.present && s.source === 'db')).toBe(true)
+  expect(inttraCfg.secrets.map((s) => s.hint)).toEqual(['9876', '5432'])
+
+  // Bad input is rejected without touching what is stored.
+  expect((await page.request.put('/api/integrations/inttra/credentials', { data: { baseUrl: 'ftp://nope.example' } })).status()).toBe(400)
+  expect((await page.request.put('/api/integrations/inttra/credentials', { data: { secrets: { ACE_API_KEY: 'x' } } })).status()).toBe(400)
+
+  // Clearing one key degrades the provider back to mock-only.
+  await page.reload()
+  await page.getByRole('button', { name: 'Integrations' }).click()
+  await page.getByTestId('integration-inttra-clear-INTTRA_API_KEY').click()
+  await expect(page.getByTestId('integration-inttra-mode-live')).toBeDisabled()
+  expect((await page.request.put('/api/integrations/inttra', { data: { mode: 'live' } })).status()).toBe(400)
+
+  // Leave the shared database as the other tests expect it.
+  const reset = await page.request.put('/api/integrations/inttra/credentials', {
+    data: { baseUrl: null, secrets: { INTTRA_CLIENT_ID: null, INTTRA_API_KEY: null } },
+  })
+  expect(reset.status()).toBe(200)
+  expect(((await reset.json()) as { secrets: { present: boolean }[] }).secrets.some((s) => s.present)).toBe(false)
 })
 
 test('ops user books a shipment that persists, with comment and approval', async ({ page }) => {

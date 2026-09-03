@@ -4,7 +4,7 @@ import { useAuth, type UserSettings } from '../context/AuthContext'
 import { apiFetch } from '../lib/api'
 import { Card, CardHeader } from '../components/ui/Card'
 import Tabs from '../components/ui/Tabs'
-import { SavedFlash, Select, Toggle } from '../components/ui/inputs'
+import { inputCls, SavedFlash, Select, Toggle } from '../components/ui/inputs'
 import IntegrationsTab from '../components/settings/IntegrationsTab'
 
 const TIMEZONES = ['UTC', 'Asia/Jerusalem', 'Europe/Paris', 'Europe/London', 'America/New_York', 'America/Los_Angeles', 'Asia/Shanghai', 'Asia/Singapore']
@@ -16,9 +16,6 @@ const LANDING_PAGES = [
   { value: '/documents', label: 'Documents' },
   { value: '/analytics', label: 'Analytics' },
 ]
-
-const inputCls =
-  'w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-600/15'
 
 function ProfileTab() {
   const { user, saveProfile } = useAuth()

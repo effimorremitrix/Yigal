@@ -1,5 +1,11 @@
 # Copy to .dev.vars (git-ignored); `wrangler dev` loads it automatically.
 # Leave a value blank or the line absent to keep that provider in mock mode.
+
+# Master key that encrypts the credentials an admin saves in Settings > Integrations.
+# Generate one with: openssl rand -base64 32
+CREDENTIALS_KEY=
+
+# Fallbacks only: anything saved through the admin UI takes precedence.
 ACE_BASE_URL=
 ACE_API_KEY=
 INTTRA_BASE_URL=

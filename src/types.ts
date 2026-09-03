@@ -130,6 +130,17 @@ export interface IntegrationHealth {
   latencyMs?: number
 }
 
+// Where the value in use comes from: 'db' = saved by an admin in Settings, 'env' = deployment config.
+export type SecretSource = 'db' | 'env' | null
+
+export interface IntegrationSecret {
+  name: string
+  present: boolean
+  source: SecretSource // 'db' with present:false means stored but no longer decryptable
+  hint: string | null // last four characters of a stored value
+  updatedAt: string | null
+}
+
 export interface IntegrationConfig {
   provider: IntegrationProvider
   label: string
@@ -138,8 +149,10 @@ export interface IntegrationConfig {
   effectiveMode: IntegrationMode // what the worker will actually use (live only with full credentials)
   baseUrl: string | null
   baseUrlVar: string
-  secrets: { name: string; present: boolean }[] // presence only, never values
+  baseUrlSource: SecretSource
+  secrets: IntegrationSecret[] // presence, source and hint only, never values
   liveAvailable: boolean
+  credentialsEditable: boolean // CREDENTIALS_KEY is set, so the admin UI can store credentials
   lastCheck: IntegrationHealth | null
   updatedAt: string
 }

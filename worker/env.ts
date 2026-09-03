@@ -4,8 +4,13 @@ export interface Env {
   // Non-secret integration config from wrangler.jsonc "vars" (override locally in .dev.vars). Empty = not configured.
   ACE_BASE_URL?: string
   INTTRA_BASE_URL?: string
-  // Secrets: `wrangler secret put <NAME>` in production, `.dev.vars` locally.
-  // Values are read only in worker/integrations/registry.ts; everything else sees presence booleans.
+  // Master key for the credentials an admin saves in Settings > Integrations (AES-GCM, see
+  // worker/integrations/secrets.ts). `wrangler secret put CREDENTIALS_KEY`; without it the UI
+  // cannot store credentials and only the vendor secrets below apply.
+  CREDENTIALS_KEY?: string
+  // Vendor credentials, bootstrap/fallback only: a value stored through the admin UI wins.
+  // `wrangler secret put <NAME>` in production, `.dev.vars` locally.
+  // Values are consumed only in worker/integrations/registry.ts; everything else sees presence booleans.
   ACE_API_KEY?: string
   INTTRA_CLIENT_ID?: string
   INTTRA_API_KEY?: string

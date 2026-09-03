@@ -1,6 +1,6 @@
 import { createSession, destroySession, getSessionUser, requireRole, requireUser, verifyPassword } from './auth'
 import { HttpError, json, type Env } from './env'
-import { getCustomsStatus, listIntegrations, putIntegration, searchSchedules, testIntegration } from './integrations/api'
+import { getCustomsStatus, listIntegrations, putCredentials, putIntegration, searchSchedules, testIntegration } from './integrations/api'
 import { Router, type RequestContext } from './router'
 import { addComment, approveDocument, createShipment, getShipment, listShipments } from './shipments'
 import { getSettings, putSettings } from './settings'
@@ -76,6 +76,9 @@ router.add('GET', '/api/integrations', async ({ env, user }) => {
 })
 router.add('PUT', '/api/integrations/:provider', async ({ request, env, user, params }) =>
   putIntegration(env, requireRole(user, ['admin']), params.provider, await body(request)),
+)
+router.add('PUT', '/api/integrations/:provider/credentials', async ({ request, env, user, params }) =>
+  putCredentials(env, requireRole(user, ['admin']), params.provider, await body(request)),
 )
 router.add('POST', '/api/integrations/:provider/test', async ({ env, user, params }) => {
   requireRole(user, ['admin'])
