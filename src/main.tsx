@@ -12,6 +12,7 @@ import ShipmentDetailPage from './pages/ShipmentDetailPage'
 import BookingPage from './pages/BookingPage'
 import TrackTracePage from './pages/TrackTracePage'
 import DocumentsPage from './pages/DocumentsPage'
+import InvoicesPage from './pages/InvoicesPage'
 import AnalyticsPage from './pages/AnalyticsPage'
 import LoginPage from './pages/LoginPage'
 import SettingsPage from './pages/SettingsPage'
@@ -33,6 +34,7 @@ const router = createBrowserRouter([
           { path: 'booking', element: <BookingPage /> },
           { path: 'tracking', element: <TrackTracePage /> },
           { path: 'documents', element: <DocumentsPage /> },
+          { path: 'invoices', element: <InvoicesPage /> },
           { path: 'analytics', element: <AnalyticsPage /> },
           { path: 'settings', element: <SettingsPage /> },
         ],

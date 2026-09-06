@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { UserPlus } from 'lucide-react'
 import { useAuth, type UserSettings } from '../context/AuthContext'
 import { apiFetch } from '../lib/api'
@@ -275,13 +276,15 @@ function AdminTab() {
 
 export default function SettingsPage() {
   const { isAdmin } = useAuth()
-  const [tab, setTab] = useState('profile')
-
+  const [params] = useSearchParams()
   const tabs = [
     { id: 'profile', label: 'Profile' },
     { id: 'preferences', label: 'Preferences' },
     ...(isAdmin ? [{ id: 'admin', label: 'Users & Organizations' }, { id: 'integrations', label: 'Integrations' }] : []),
   ]
+  // ?tab=integrations deep-links straight to a tab (used by the QuickBooks OAuth return and the Invoices page).
+  const requested = params.get('tab')
+  const [tab, setTab] = useState(requested && tabs.some((t) => t.id === requested) ? requested : 'profile')
 
   return (
     <Card>

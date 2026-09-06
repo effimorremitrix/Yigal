@@ -1,4 +1,4 @@
-import type { DocStatus, ShipmentStatus } from '../../types'
+import type { DocStatus, InvoiceStatus, ShipmentStatus } from '../../types'
 
 export const SHIPMENT_STATUS_META: Record<ShipmentStatus, { label: string; cls: string; dot: string }> = {
   booking_confirmed: { label: 'Booking confirmed', cls: 'bg-sky-50 text-sky-700 border-sky-200', dot: 'bg-sky-500' },
@@ -28,6 +28,22 @@ const DOC_STATUS_META: Record<DocStatus, { label: string; cls: string }> = {
 
 export function DocStatusBadge({ status }: { status: DocStatus }) {
   const m = DOC_STATUS_META[status]
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${m.cls}`}>
+      {m.label}
+    </span>
+  )
+}
+
+export const INVOICE_STATUS_META: Record<InvoiceStatus, { label: string; cls: string }> = {
+  open: { label: 'Open', cls: 'bg-sky-50 text-sky-700 border-sky-200' },
+  overdue: { label: 'Overdue', cls: 'bg-red-50 text-red-700 border-red-200' },
+  paid: { label: 'Paid', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  void: { label: 'Void', cls: 'bg-slate-50 text-slate-500 border-slate-200' },
+}
+
+export function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
+  const m = INVOICE_STATUS_META[status]
   return (
     <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${m.cls}`}>
       {m.label}

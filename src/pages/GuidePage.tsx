@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   Map,
   Minus,
+  Receipt,
   Settings,
   Ship,
 } from 'lucide-react'
@@ -16,8 +17,8 @@ import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
 
 const ACCOUNTS = [
-  { email: 'effi@tidelane.demo', role: 'Admin', org: 'Tidelane (internal)', sees: 'Everything, plus user management and integrations in Settings' },
-  { email: 'ops@tidelane.demo', role: 'Operations', org: 'Tidelane (internal)', sees: 'All shipments; can book, approve documents, comment' },
+  { email: 'effi@tidelane.demo', role: 'Admin', org: 'Tidelane (internal)', sees: 'Everything, plus user management, integrations (incl. QuickBooks) and invoices' },
+  { email: 'ops@tidelane.demo', role: 'Operations', org: 'Tidelane (internal)', sees: 'All shipments and QuickBooks invoices; can book, approve documents, comment' },
   { email: 'viewer@tidelane.demo', role: 'Viewer', org: 'Tidelane (internal)', sees: 'All shipments, read-only' },
   { email: 'dana@atlaspolymers.demo', role: 'Operations', org: 'Atlas Polymers (shipper)', sees: 'Only shipments where Atlas Polymers is a party' },
   { email: 'amit@globalfreight.demo', role: 'Operations', org: 'GlobalFreight Partners (forwarder)', sees: 'Only shipments they forward' },
@@ -31,6 +32,7 @@ const PERMISSIONS: { action: string; admin: boolean; ops: boolean; viewer: boole
   { action: 'Approve documents', admin: true, ops: true, viewer: false },
   { action: 'Post comments to parties', admin: true, ops: true, viewer: false },
   { action: 'Edit own profile & preferences', admin: true, ops: true, viewer: true },
+  { action: 'Pull and view QuickBooks invoices (Tidelane org only)', admin: true, ops: true, viewer: false },
   { action: 'Manage users & organizations', admin: true, ops: false, viewer: false },
 ]
 
@@ -61,6 +63,11 @@ const MODULES = [
     text: 'Registry of shipping instructions, B/Ls, VGM declarations, invoices and packing lists across shipments. Ops users can approve pending documents from the shipment page; approvals persist.',
   },
   {
+    icon: Receipt,
+    name: 'Invoices',
+    text: 'Customer invoices pulled from QuickBooks Online (deterministic mock data until a company is connected): open receivables, overdue and paid, each linked to the shipment it bills. Tidelane operations users only; partner organizations never see finance data.',
+  },
+  {
     icon: BarChart3,
     name: 'Analytics',
     text: 'TEU volume by month, carrier allocation, on-time performance against a 90% target, and CO₂ by trade lane — computed live from the shipments your organization can see.',
@@ -68,7 +75,7 @@ const MODULES = [
   {
     icon: Settings,
     name: 'Settings',
-    text: 'Profile (name, title), preferences (timezone, date format, landing page, notification toggles) — all saved per user. Admins also manage users here: invite, change role or organization, deactivate.',
+    text: 'Profile (name, title), preferences (timezone, date format, landing page, notification toggles) — all saved per user. Admins also manage users here (invite, change role or organization, deactivate) and the external connectors: CBP ACE customs, E2open INTTRA and Intuit QuickBooks, each with mock/live mode, encrypted credentials and a connection test. QuickBooks can also be connected with an Intuit sign-in.',
   },
 ]
 
