@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { KeyRound, Plug, RefreshCw } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
+import { ExternalLink, KeyRound, Plug, RefreshCw } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import type { IntegrationConfig, IntegrationMode, IntegrationProvider, IntegrationSecret } from '../../types'
 import { inputCls, Toggle } from '../ui/inputs'
@@ -7,6 +8,7 @@ import { inputCls, Toggle } from '../ui/inputs'
 const DESCRIPTIONS: Record<IntegrationProvider, string> = {
   ace: 'US customs filing status per shipment: ISF 10+2, entry summary, release.',
   inttra: 'Ocean network: sailing schedules, booking requests, shipping instructions, track & trace.',
+  quickbooks: 'Accounts receivable: pull customer invoices, balances and due dates for your shipments.',
 }
 
 const MODES: IntegrationMode[] = ['mock', 'live']
@@ -138,13 +140,88 @@ function CredentialsForm({
   )
 }
 
+// QuickBooks Online is OAuth-only. The generic form above still takes all four values (the "paste" path,
+// with the realm id and refresh token from Intuit's OAuth Playground); this block offers the alternative:
+// save client id + secret, then let Intuit's consent screen fill in the other two.
+const QB_CALLBACK_PATH = '/api/integrations/quickbooks/oauth/callback'
+const QB_REASONS: Record<string, string> = {
+  access_denied: 'you cancelled at the Intuit consent screen',
+  invalid_state: 'the sign-in link was stale or already used; start again from this page',
+  missing_code: 'Intuit did not return an authorization code',
+  token_exchange: 'Intuit rejected the code exchange; check the client ID, secret and registered redirect URI',
+  not_configured: 'client credentials or CREDENTIALS_KEY are missing',
+  forbidden: 'only an admin can connect',
+  vendor_error: 'Intuit reported an error',
+}
+
+function QuickBooksConnect({ config: c, busy, onBusy, onError }: { config: IntegrationConfig; busy: string | null; onBusy: (k: string | null) => void; onError: (m: string) => void }) {
+  const has = (name: string) => c.secrets.find((s) => s.name === name)?.present ?? false
+  const realm = c.secrets.find((s) => s.name === 'QUICKBOOKS_REALM_ID')
+  const connected = has('QUICKBOOKS_REALM_ID') && has('QUICKBOOKS_REFRESH_TOKEN')
+  const canConnect = c.credentialsEditable && Boolean(c.baseUrl) && has('QUICKBOOKS_CLIENT_ID') && has('QUICKBOOKS_CLIENT_SECRET')
+  const redirectUri = `${window.location.origin}${QB_CALLBACK_PATH}`
+
+  async function connect() {
+    onError('')
+    onBusy('quickbooks:connect')
+    try {
+      const { url } = await apiFetch<{ url: string; redirectUri: string }>('/api/integrations/quickbooks/oauth/start', { method: 'POST' })
+      window.location.assign(url)
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Could not start the QuickBooks sign-in')
+      onBusy(null)
+    }
+  }
+
+  return (
+    <div className="mt-3 space-y-3 rounded-lg border border-slate-200 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-[12px] font-medium text-slate-700">Connect with Intuit sign-in</div>
+          <div className="text-[11px] text-slate-400" data-testid="integration-quickbooks-connection">
+            {connected ? `Connected · company ····${realm?.hint ?? '????'}` : 'Not connected'}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => void connect()}
+          disabled={Boolean(busy) || !canConnect}
+          title={canConnect ? undefined : 'Save the base URL, QUICKBOOKS_CLIENT_ID and QUICKBOOKS_CLIENT_SECRET first'}
+          data-testid="integration-quickbooks-connect"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-[12px] font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <ExternalLink size={13} />
+          {busy === 'quickbooks:connect' ? 'Redirecting…' : connected ? 'Reconnect to QuickBooks' : 'Connect to QuickBooks'}
+        </button>
+      </div>
+      <div className="text-[11px] text-slate-500">
+        Register this redirect URI in your Intuit app (developer.intuit.com › Keys &amp; credentials):{' '}
+        <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-700" data-testid="integration-quickbooks-redirect">
+          {redirectUri}
+        </code>
+        . Run the sign-in from the worker origin (not the Vite dev server), since the worker derives the same value.
+      </div>
+      <div className="text-[11px] text-slate-500">
+        No sign-in? Paste <span className="font-mono">QUICKBOOKS_REALM_ID</span> and <span className="font-mono">QUICKBOOKS_REFRESH_TOKEN</span> from Intuit's OAuth 2.0
+        Playground into the fields above instead. Base URL: <span className="font-mono">https://sandbox-quickbooks.api.intuit.com</span> (sandbox) or{' '}
+        <span className="font-mono">https://quickbooks.api.intuit.com</span> (production). Once connected, switch Mode to Live and press Test connection;
+        rotated refresh tokens are stored automatically.
+      </div>
+    </div>
+  )
+}
+
 function ProviderCard({
   config: c,
   busy,
   onUpdate,
   onSaveCredentials,
   onTest,
+  onBusy,
+  onError,
 }: {
+  onBusy: (k: string | null) => void
+  onError: (m: string) => void
   config: IntegrationConfig
   busy: string | null
   onUpdate: (patch: { enabled?: boolean; mode?: IntegrationMode }) => void
@@ -214,6 +291,8 @@ function ProviderCard({
 
       <CredentialsForm config={c} busy={busy} onSave={onSaveCredentials} />
 
+      {c.provider === 'quickbooks' && <QuickBooksConnect config={c} busy={busy} onBusy={onBusy} onError={onError} />}
+
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <button
           type="button"
@@ -266,6 +345,16 @@ export default function IntegrationsTab() {
   const [items, setItems] = useState<IntegrationConfig[] | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
+  // Outcome of the QuickBooks OAuth round-trip, delivered by the callback redirect as ?quickbooks=connected|error&reason=.
+  const [params, setParams] = useSearchParams()
+  const oauthOutcome = params.get('quickbooks')
+  const oauthReason = params.get('reason') ?? ''
+  const dismissOauth = () => {
+    const next = new URLSearchParams(params)
+    next.delete('quickbooks')
+    next.delete('reason')
+    setParams(next, { replace: true })
+  }
 
   useEffect(() => {
     apiFetch<IntegrationConfig[]>('/api/integrations')
@@ -301,12 +390,31 @@ export default function IntegrationsTab() {
         External connectors run in Mock mode (deterministic sample data, no outbound calls) until their credentials are configured. Turning a
         connector off makes the endpoints that depend on it return 503.
       </p>
+      {oauthOutcome && (
+        <div
+          data-testid="integration-quickbooks-flash"
+          className={`flex items-start justify-between gap-3 rounded-lg border px-3 py-2 text-[12px] ${
+            oauthOutcome === 'connected' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'
+          }`}
+        >
+          <span>
+            {oauthOutcome === 'connected'
+              ? 'QuickBooks connected. Switch the mode to Live and press Test connection to verify.'
+              : `QuickBooks connection failed: ${QB_REASONS[oauthReason] ?? oauthReason ?? 'unknown error'}.`}
+          </span>
+          <button type="button" onClick={dismissOauth} className="shrink-0 font-medium underline-offset-2 hover:underline">
+            Dismiss
+          </button>
+        </div>
+      )}
       {error && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">{error}</div>}
       {items.map((c) => (
         <ProviderCard
           key={c.provider}
           config={c}
           busy={busy}
+          onBusy={setBusy}
+          onError={setError}
           onUpdate={(patch) =>
             void run(`${c.provider}:update`, () => apiFetch<IntegrationConfig>(`/api/integrations/${c.provider}`, { method: 'PUT', json: patch }))
           }

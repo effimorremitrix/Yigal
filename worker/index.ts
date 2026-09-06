@@ -1,6 +1,16 @@
-import { createSession, destroySession, getSessionUser, requireRole, requireUser, verifyPassword } from './auth'
+import { createSession, destroySession, getSessionUser, requireInternal, requireRole, requireUser, verifyPassword } from './auth'
 import { HttpError, json, type Env } from './env'
-import { getCustomsStatus, listIntegrations, putCredentials, putIntegration, searchSchedules, testIntegration } from './integrations/api'
+import {
+  getCustomsStatus,
+  listIntegrations,
+  putCredentials,
+  putIntegration,
+  quickBooksOAuthCallback,
+  searchSchedules,
+  startQuickBooksOAuth,
+  testIntegration,
+} from './integrations/api'
+import { listInvoices, syncInvoices } from './invoices'
 import { Router, type RequestContext } from './router'
 import { addComment, approveDocument, createShipment, getShipment, listShipments } from './shipments'
 import { getSettings, putSettings } from './settings'
@@ -91,6 +101,14 @@ router.add('GET', '/api/integrations/inttra/schedules', async ({ request, env, u
   requireRole(user, ['admin', 'ops'])
   return searchSchedules(env, request)
 })
+
+// QuickBooks: admin connects (OAuth), internal admin+ops pull and read invoices. Partners never see finance data.
+router.add('POST', '/api/integrations/quickbooks/oauth/start', async ({ request, env, user }) =>
+  startQuickBooksOAuth(env, requireRole(user, ['admin']), request),
+)
+router.add('GET', '/api/integrations/quickbooks/oauth/callback', async ({ request, env, user }) => quickBooksOAuthCallback(env, user, request))
+router.add('POST', '/api/integrations/quickbooks/invoices/sync', async ({ env, user }) => syncInvoices(env, requireInternal(user, ['admin', 'ops'])))
+router.add('GET', '/api/invoices', async ({ env, user }) => listInvoices(env, requireInternal(user, ['admin', 'ops'])))
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {

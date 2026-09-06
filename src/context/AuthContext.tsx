@@ -29,6 +29,7 @@ interface AuthContextValue {
   settings: UserSettings | null
   canWrite: boolean
   isAdmin: boolean
+  isInternal: boolean // member of the internal (Tidelane) organization, as opposed to a partner org
   login: (email: string, password: string) => Promise<AuthUser>
   landingPage: string
   logout: () => Promise<void>
@@ -106,6 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       settings,
       canWrite: user?.role === 'admin' || user?.role === 'ops',
       isAdmin: user?.role === 'admin',
+      isInternal: user?.orgType === 'internal',
       landingPage: settings?.landing_page ?? '/',
       login,
       logout,

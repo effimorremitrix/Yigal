@@ -1,6 +1,7 @@
 import { HttpError, json, type Env, type SessionUser } from './env'
 import { LANES, PORTS } from '../src/data/constants'
 import type { Milestone, Shipment } from '../src/types'
+import type { InvoiceSeed } from './integrations/quickbooks/mock'
 
 export interface ShipmentRow {
   id: string
@@ -121,6 +122,39 @@ export async function listShipments(env: Env, user: SessionUser): Promise<Respon
     .bind(...scope.binds)
     .all<ShipmentRow>()
   return json(await assemble(env, rows.results))
+}
+
+// Seed rows for the QuickBooks mock ledger: every shipment plus the party it is billed to (the shipper).
+// No org scoping: the invoices endpoints are internal-only and gate before calling this.
+export async function loadInvoiceSeeds(env: Env): Promise<InvoiceSeed[]> {
+  const rows = await env.DB.prepare(
+    `SELECT s.id, s.booking_ref, s.status, s.etd, s.eta, s.origin_code, s.destination_code, s.incoterm, s.freight_cost_usd,
+            (SELECT p.name FROM shipment_parties p WHERE p.shipment_id = s.id AND p.role = 'shipper' ORDER BY p.id LIMIT 1) AS shipper_name
+     FROM shipments s ORDER BY s.etd DESC, s.id`,
+  ).all<{
+    id: string
+    booking_ref: string
+    status: string
+    etd: string
+    eta: string
+    origin_code: string
+    destination_code: string
+    incoterm: string
+    freight_cost_usd: number
+    shipper_name: string | null
+  }>()
+  return rows.results.map((r) => ({
+    shipmentId: r.id,
+    bookingRef: r.booking_ref,
+    status: r.status,
+    etd: r.etd,
+    eta: r.eta,
+    originCode: r.origin_code,
+    destinationCode: r.destination_code,
+    incoterm: r.incoterm,
+    freightCostUsd: r.freight_cost_usd,
+    shipperName: r.shipper_name,
+  }))
 }
 
 export async function fetchVisible(env: Env, user: SessionUser, id: string): Promise<ShipmentRow> {

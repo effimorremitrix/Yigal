@@ -7,25 +7,28 @@ import {
   FileText,
   LayoutDashboard,
   Map,
+  Receipt,
   Settings,
   Ship,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 
+// write: admin/ops only. internalWrite: admin/ops of the internal org only (finance data stays in-house).
 const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/shipments', label: 'Shipments', icon: Ship },
   { to: '/booking', label: 'New Booking', icon: CalendarPlus, write: true },
   { to: '/tracking', label: 'Track & Trace', icon: Map },
   { to: '/documents', label: 'Documents', icon: FileText },
+  { to: '/invoices', label: 'Invoices', icon: Receipt, internalWrite: true },
   { to: '/analytics', label: 'Analytics', icon: BarChart3 },
   { to: '/settings', label: 'Settings', icon: Settings },
   { to: '/guide', label: 'User Guide', icon: BookOpen },
 ]
 
 export default function Sidebar() {
-  const { user, canWrite } = useAuth()
-  const items = NAV.filter((item) => !item.write || canWrite)
+  const { user, canWrite, isInternal } = useAuth()
+  const items = NAV.filter((item) => (!item.write || canWrite) && (!item.internalWrite || (canWrite && isInternal)))
 
   return (
     <aside className="fixed inset-y-0 left-0 z-20 flex w-60 flex-col bg-navy-900 text-slate-300">

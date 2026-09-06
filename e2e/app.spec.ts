@@ -59,6 +59,10 @@ test('viewer has no write affordances', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Users & Organizations' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Integrations' })).toHaveCount(0)
   expect((await page.request.put('/api/integrations/ace', { data: { enabled: false } })).status()).toBe(403)
+
+  // Finance data is for internal admin/ops only: no nav entry, and the API refuses a viewer.
+  await expect(page.getByRole('link', { name: 'Invoices' })).toHaveCount(0)
+  expect((await page.request.get('/api/invoices')).status()).toBe(403)
 })
 
 test('partner user sees only their org shipments', async ({ page }) => {
@@ -76,6 +80,13 @@ test('partner user sees only their org shipments', async ({ page }) => {
   // Direct navigation to a shipment outside the org scope is refused (s4 is not Atlas').
   await page.goto('/shipments/s4')
   await expect(page.getByText('Shipment not found')).toBeVisible()
+
+  // A partner ops user never sees invoices, even though the role would allow it internally.
+  await expect(page.getByRole('link', { name: 'Invoices' })).toHaveCount(0)
+  expect((await page.request.get('/api/invoices')).status()).toBe(403)
+  expect((await page.request.post('/api/integrations/quickbooks/invoices/sync')).status()).toBe(403)
+  await page.goto('/invoices')
+  await expect(page.getByText('Invoices are available to Tidelane operations users')).toBeVisible()
 })
 
 test('settings persist across reload', async ({ page }) => {
@@ -115,7 +126,7 @@ test('admin manages integrations in mock mode', async ({ page }) => {
 
   // The API reports secret presence, source and a hint, never values.
   const list = (await (await page.request.get('/api/integrations')).json()) as { secrets: Record<string, unknown>[] }[]
-  expect(list).toHaveLength(2)
+  expect(list).toHaveLength(3)
   for (const c of list) for (const s of c.secrets) expect(Object.keys(s).sort()).toEqual(['hint', 'name', 'present', 'source', 'updatedAt'])
   expect((await page.request.put('/api/integrations/inttra', { data: { mode: 'live' } })).status()).toBe(400)
 
@@ -197,6 +208,117 @@ test('admin saves and clears integration credentials from the UI', async ({ page
   // Leave the shared database as the other tests expect it.
   const reset = await page.request.put('/api/integrations/inttra/credentials', {
     data: { baseUrl: null, secrets: { INTTRA_CLIENT_ID: null, INTTRA_API_KEY: null } },
+  })
+  expect(reset.status()).toBe(200)
+  expect(((await reset.json()) as { secrets: { present: boolean }[] }).secrets.some((s) => s.present)).toBe(false)
+})
+
+test('admin connects QuickBooks (mock) and internal ops see invoices', async ({ page }) => {
+  const CLIENT_ID = 'qb-client-e2e-1111'
+  const CLIENT_SECRET = 'qb-secret-e2e-2222'
+  const CALLBACK = '/api/integrations/quickbooks/oauth/callback'
+
+  await login(page, 'effi@tidelane.demo')
+  await page.goto('/settings')
+  await page.getByRole('button', { name: 'Integrations' }).click()
+  const qb = page.getByTestId('integration-quickbooks')
+  await expect(qb).toBeVisible()
+  await expect(page.getByTestId('integration-quickbooks-connection')).toContainText('Not connected')
+  await expect(page.getByTestId('integration-quickbooks-connect')).toBeDisabled()
+  await expect(page.getByTestId('integration-quickbooks-mode-live')).toBeDisabled()
+  await expect(page.getByTestId('integration-quickbooks-redirect')).toHaveText(`http://localhost:8787${CALLBACK}`)
+
+  // The OAuth flow cannot start before the client credentials exist.
+  expect((await page.request.post('/api/integrations/quickbooks/oauth/start')).status()).toBe(400)
+
+  await page.getByTestId('integration-quickbooks-baseurl').fill('https://sandbox-quickbooks.api.intuit.com')
+  await page.getByTestId('integration-quickbooks-secret-QUICKBOOKS_CLIENT_ID').fill(CLIENT_ID)
+  await page.getByTestId('integration-quickbooks-secret-QUICKBOOKS_CLIENT_SECRET').fill(CLIENT_SECRET)
+  await page.getByTestId('integration-quickbooks-save-credentials').click()
+  await expect(page.getByTestId('integration-quickbooks-connect')).toBeEnabled()
+  await expect(page.getByTestId('integration-quickbooks-mode-live')).toBeDisabled() // realm id + refresh token still missing
+  await expect(qb).not.toContainText(CLIENT_SECRET)
+
+  // Start builds Intuit's authorize URL with a single-use state; the secret never leaves the worker.
+  const start = await page.request.post('/api/integrations/quickbooks/oauth/start')
+  expect(start.status()).toBe(200)
+  expect(await start.text()).not.toContain(CLIENT_SECRET)
+  const { url } = (await start.json()) as { url: string; redirectUri: string }
+  expect(url.startsWith('https://appcenter.intuit.com/connect/oauth2?')).toBe(true)
+  const authorize = new URL(url)
+  expect(authorize.searchParams.get('client_id')).toBe(CLIENT_ID)
+  expect(authorize.searchParams.get('redirect_uri')).toBe(`http://localhost:8787${CALLBACK}`)
+  expect(authorize.searchParams.get('scope')).toBe('com.intuit.quickbooks.accounting')
+  const state = authorize.searchParams.get('state')!
+  expect(state.length).toBeGreaterThan(20)
+
+  // Callback: wrong state is refused without consuming the pending flow; cancel consumes it; replay fails.
+  const wrong = await page.request.get(`${CALLBACK}?code=x&state=wrong&realmId=1`, { maxRedirects: 0 })
+  expect(wrong.status()).toBe(302)
+  expect(wrong.headers()['location']).toContain('quickbooks=error&reason=invalid_state')
+  const cancelled = await page.request.get(`${CALLBACK}?error=access_denied&state=${state}`, { maxRedirects: 0 })
+  expect(cancelled.headers()['location']).toContain('quickbooks=error&reason=access_denied')
+  const replay = await page.request.get(`${CALLBACK}?code=x&state=${state}&realmId=1`, { maxRedirects: 0 })
+  expect(replay.headers()['location']).toContain('reason=invalid_state')
+
+  // The redirect target opens the Integrations tab directly and shows the outcome.
+  await page.goto('/settings?tab=integrations&quickbooks=error&reason=access_denied')
+  await expect(page.getByTestId('integration-quickbooks-flash')).toContainText('consent screen')
+  await expect(page.getByTestId('integration-quickbooks')).toBeVisible()
+
+  // Pull in mock mode: one invoice per shipment, persisted, linked back to shipments.
+  const sync = await page.request.post('/api/integrations/quickbooks/invoices/sync')
+  expect(sync.status()).toBe(200)
+  const summary = (await sync.json()) as { ok: boolean; mode: string; count: number }
+  expect(summary.ok).toBe(true)
+  expect(summary.mode).toBe('mock')
+  const shipments = (await (await page.request.get('/api/shipments')).json()) as { id: string }[]
+  expect(summary.count).toBe(shipments.length)
+
+  const ledger = (await (await page.request.get('/api/invoices')).json()) as {
+    source: string
+    lastSync: { ok: boolean; mode: string; count: number }
+    invoices: { status: string; balance: number; shipmentId: string | null }[]
+  }
+  expect(ledger.source).toBe('mock')
+  expect(ledger.lastSync.ok).toBe(true)
+  expect(ledger.invoices).toHaveLength(shipments.length)
+  expect(ledger.invoices.every((i) => i.shipmentId)).toBe(true)
+  const paid = ledger.invoices.filter((i) => i.status === 'paid').length
+  expect(paid).toBeGreaterThan(0)
+  expect(paid).toBeLessThan(ledger.invoices.length)
+  const money = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
+  const receivable = ledger.invoices.filter((i) => i.status === 'open' || i.status === 'overdue').reduce((n, i) => n + i.balance, 0)
+
+  await page.goto('/invoices')
+  await expect(page.getByTestId('invoices-last-sync')).toContainText(`${shipments.length} invoices · mock`)
+  await expect(page.getByTestId('invoices-kpi-count')).toHaveText(String(shipments.length))
+  await expect(page.getByTestId('invoices-kpi-paid')).toHaveText(String(paid))
+  await expect(page.getByTestId('invoices-kpi-open')).toHaveText(money(receivable))
+  await expect(page.getByTestId('invoice-row')).toHaveCount(shipments.length)
+  await expect(page.locator('a[href="/shipments/s5"]')).toHaveCount(1)
+
+  // Kill switch: a disabled connector refuses to pull.
+  expect((await page.request.put('/api/integrations/quickbooks', { data: { enabled: false } })).status()).toBe(200)
+  expect((await page.request.post('/api/integrations/quickbooks/invoices/sync')).status()).toBe(503)
+  expect((await page.request.put('/api/integrations/quickbooks', { data: { enabled: true } })).status()).toBe(200)
+
+  // Internal ops users get the same view; the pull button re-runs an idempotent upsert.
+  await page.getByTestId('user-menu').click()
+  await page.getByRole('button', { name: 'Log out' }).click()
+  await login(page, 'ops@tidelane.demo')
+  await expect(page.getByRole('link', { name: 'Invoices' })).toBeVisible()
+  await page.goto('/invoices')
+  await page.getByTestId('invoices-sync').click()
+  await expect(page.getByTestId('invoices-last-sync')).toContainText(`${shipments.length} invoices · mock`)
+  await expect(page.getByTestId('invoice-row')).toHaveCount(shipments.length)
+
+  // Leave the shared database as the other tests expect it (invoice rows are harmless; credentials are not).
+  await page.getByTestId('user-menu').click()
+  await page.getByRole('button', { name: 'Log out' }).click()
+  await login(page, 'effi@tidelane.demo')
+  const reset = await page.request.put('/api/integrations/quickbooks/credentials', {
+    data: { baseUrl: null, secrets: { QUICKBOOKS_CLIENT_ID: null, QUICKBOOKS_CLIENT_SECRET: null, QUICKBOOKS_REALM_ID: null, QUICKBOOKS_REFRESH_TOKEN: null } },
   })
   expect(reset.status()).toBe(200)
   expect(((await reset.json()) as { secrets: { present: boolean }[] }).secrets.some((s) => s.present)).toBe(false)

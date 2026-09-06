@@ -78,7 +78,8 @@ export async function loadStored(env: Env, provider: IntegrationProvider): Promi
   return out
 }
 
-export async function saveSecret(env: Env, provider: IntegrationProvider, name: string, value: string, userId: number): Promise<void> {
+// userId is null when no user is acting, e.g. a vendor-rotated token persisted during a background refresh.
+export async function saveSecret(env: Env, provider: IntegrationProvider, name: string, value: string, userId: number | null): Promise<void> {
   await env.DB.prepare(
     `INSERT INTO integration_credentials (provider, name, ciphertext, hint, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(provider, name) DO UPDATE SET ciphertext = excluded.ciphertext, hint = excluded.hint,

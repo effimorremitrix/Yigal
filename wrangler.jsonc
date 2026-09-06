@@ -8,10 +8,11 @@
   // Runs before deploy/dev so CI (Workers Builds) and `wrangler deploy` always have a fresh dist/.
   "build": { "command": "npm run build" },
   // Non-secret integration fallbacks. An admin sets the live values in Settings > Integrations; these apply
-  // only until then. Secrets (CREDENTIALS_KEY, ACE_API_KEY, INTTRA_CLIENT_ID, INTTRA_API_KEY) are set with
+  // only until then. Secrets (CREDENTIALS_KEY, ACE_API_KEY, INTTRA_CLIENT_ID, INTTRA_API_KEY, QUICKBOOKS_CLIENT_ID,
+  // QUICKBOOKS_CLIENT_SECRET, QUICKBOOKS_REALM_ID, QUICKBOOKS_REFRESH_TOKEN) are set with
   // `wrangler secret put <NAME>` (or .dev.vars locally), never here. CREDENTIALS_KEY is required for the
-  // admin UI to store credentials at all.
-  "vars": { "ACE_BASE_URL": "", "INTTRA_BASE_URL": "" },
+  // admin UI to store credentials at all, and for the QuickBooks connect flow.
+  "vars": { "ACE_BASE_URL": "", "INTTRA_BASE_URL": "", "QUICKBOOKS_BASE_URL": "" },
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application",
