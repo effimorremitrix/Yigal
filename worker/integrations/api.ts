@@ -2,9 +2,10 @@ import { LANES } from '../../src/data/constants'
 import type { IntegrationMode, ScheduleResult } from '../../src/types'
 import { HttpError, json, type Env, type SessionUser } from '../env'
 import { fetchVisible, type ShipmentRow } from '../shipments'
-import { credentials, saveBaseUrl, saveCheck, saveToggle, SECRET_NAMES } from './config'
-import { toHttpError } from './errors'
+import { credentials, loadRow, saveBaseUrl, saveCheck, saveOauthState, saveToggle, SECRET_NAMES } from './config'
+import { IntegrationError, toHttpError } from './errors'
 import { isProvider, PROVIDERS, type ShipmentLookup } from './provider'
+import { authorizeUrl, exchangeCode, primeTokenCache } from './quickbooks/oauth'
 import { requireEnabled, resolve, resolveAce, resolveInttra } from './registry'
 import { deleteSecret, hasStorageKey, MAX_SECRET_LENGTH, saveSecret } from './secrets'
 
@@ -125,6 +126,79 @@ export async function getCustomsStatus(env: Env, user: SessionUser, shipmentId: 
   } catch (err) {
     throw toHttpError(err)
   }
+}
+
+// ---- QuickBooks OAuth 2.0 connect flow ----
+// The admin saves client ID + secret (+ base URL) first; this round-trip only adds the realm id and the
+// refresh token, into the same encrypted rows the paste flow writes. State lives on the provider row:
+// one pending flow per provider, 10 minutes, single use.
+
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000
+const CALLBACK_PATH = '/api/integrations/quickbooks/oauth/callback'
+const SETTINGS_PATH = '/settings?tab=integrations'
+
+// Intuit requires the exact registered URI; derive it from the worker's own origin so dev (8787) and
+// production each register their own. Must be run against the worker origin, not the Vite proxy.
+export const redirectUriFor = (request: Request): string => new URL(CALLBACK_PATH, request.url).toString()
+
+const randomState = (): string =>
+  btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(24))))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
+
+export async function startQuickBooksOAuth(env: Env, _user: SessionUser, request: Request): Promise<Response> {
+  if (!hasStorageKey(env)) throw new HttpError(400, 'Credential storage is not configured: set the CREDENTIALS_KEY secret')
+  const creds = await credentials(env, 'quickbooks')
+  const clientId = creds.values.QUICKBOOKS_CLIENT_ID
+  if (!creds.baseUrl || !clientId || !creds.values.QUICKBOOKS_CLIENT_SECRET) {
+    throw new HttpError(400, 'Save the base URL, QUICKBOOKS_CLIENT_ID and QUICKBOOKS_CLIENT_SECRET before connecting')
+  }
+  const state = randomState()
+  await saveOauthState(env, 'quickbooks', state, new Date(Date.now() + OAUTH_STATE_TTL_MS).toISOString())
+  const redirectUri = redirectUriFor(request)
+  return json({ url: authorizeUrl({ clientId, redirectUri, state }), redirectUri })
+}
+
+// A browser navigation from Intuit, so every outcome is a redirect back to the Settings page.
+export async function quickBooksOAuthCallback(env: Env, user: SessionUser | null, request: Request): Promise<Response> {
+  const back = (outcome: string) => Response.redirect(new URL(`${SETTINGS_PATH}&quickbooks=${outcome}`, request.url).toString(), 302)
+  if (!user) return Response.redirect(new URL('/login', request.url).toString(), 302)
+  if (user.role !== 'admin') return back('error&reason=forbidden')
+
+  const q = new URL(request.url).searchParams
+  const row = await loadRow(env, 'quickbooks')
+  const stateOk = Boolean(row.oauth_state) && q.get('state') === row.oauth_state && (row.oauth_state_expires_at ?? '') > new Date().toISOString()
+
+  if (q.get('error')) {
+    // The admin cancelled at Intuit's consent screen (or Intuit refused). Only the pending flow may clear its state.
+    if (stateOk) await saveOauthState(env, 'quickbooks', null, null)
+    return back(`error&reason=${q.get('error') === 'access_denied' ? 'access_denied' : 'vendor_error'}`)
+  }
+  // A mismatch never clears the stored state: a stranger hitting the URL must not cancel the admin's flow.
+  if (!stateOk) return back('error&reason=invalid_state')
+  await saveOauthState(env, 'quickbooks', null, null) // single use, consumed before any network call
+
+  const code = q.get('code')
+  const realmId = q.get('realmId')
+  if (!code || !realmId || !/^\d+$/.test(realmId)) return back('error&reason=missing_code')
+
+  const creds = await credentials(env, 'quickbooks', row)
+  const clientId = creds.values.QUICKBOOKS_CLIENT_ID
+  const clientSecret = creds.values.QUICKBOOKS_CLIENT_SECRET
+  if (!clientId || !clientSecret || !hasStorageKey(env)) return back('error&reason=not_configured')
+
+  try {
+    const tokens = await exchangeCode({ clientId, clientSecret, code, redirectUri: redirectUriFor(request) })
+    if (!tokens.refreshToken) throw new IntegrationError('quickbooks', 'auth', 'QuickBooks did not return a refresh token')
+    await saveSecret(env, 'quickbooks', 'QUICKBOOKS_REALM_ID', realmId, user.id)
+    await saveSecret(env, 'quickbooks', 'QUICKBOOKS_REFRESH_TOKEN', tokens.refreshToken, user.id)
+    primeTokenCache(clientId, realmId, tokens)
+  } catch (err) {
+    console.error('quickbooks oauth exchange failed', err instanceof Error ? err.message : err)
+    return back('error&reason=token_exchange')
+  }
+  return back('connected')
 }
 
 export async function searchSchedules(env: Env, request: Request): Promise<Response> {

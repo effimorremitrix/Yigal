@@ -7,6 +7,7 @@ import { inputCls, Toggle } from '../ui/inputs'
 const DESCRIPTIONS: Record<IntegrationProvider, string> = {
   ace: 'US customs filing status per shipment: ISF 10+2, entry summary, release.',
   inttra: 'Ocean network: sailing schedules, booking requests, shipping instructions, track & trace.',
+  quickbooks: 'Accounts receivable: pull customer invoices, balances and due dates for your shipments.',
 }
 
 const MODES: IntegrationMode[] = ['mock', 'live']

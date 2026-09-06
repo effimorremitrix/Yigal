@@ -1,4 +1,4 @@
-import type { IntegrationConfig, IntegrationHealth, IntegrationMode, IntegrationProvider, SecretSource } from '../../src/types'
+import type { IntegrationConfig, IntegrationHealth, IntegrationMode, IntegrationProvider, InvoiceSync, SecretSource } from '../../src/types'
 import type { Env } from '../env'
 import { PROVIDER_LABEL } from './provider'
 import { hasStorageKey, loadStored } from './secrets'
@@ -13,6 +13,15 @@ export interface SettingsRow {
   last_check_mode: IntegrationMode | null
   last_check_latency_ms: number | null
   last_check_message: string | null
+  // Pending OAuth authorize round-trip (QuickBooks): single use, short-lived, never in a DTO.
+  oauth_state: string | null
+  oauth_state_expires_at: string | null
+  // Last data pull (invoices), independent of the connectivity health check.
+  last_sync_at: string | null
+  last_sync_ok: number | null
+  last_sync_mode: IntegrationMode | null
+  last_sync_count: number | null
+  last_sync_message: string | null
   updated_by: number | null
   updated_at: string
 }
@@ -20,8 +29,13 @@ export interface SettingsRow {
 export const SECRET_NAMES: Record<IntegrationProvider, readonly string[]> = {
   ace: ['ACE_API_KEY'],
   inttra: ['INTTRA_CLIENT_ID', 'INTTRA_API_KEY'],
+  quickbooks: ['QUICKBOOKS_CLIENT_ID', 'QUICKBOOKS_CLIENT_SECRET', 'QUICKBOOKS_REALM_ID', 'QUICKBOOKS_REFRESH_TOKEN'],
 }
-const BASE_URL_VAR: Record<IntegrationProvider, string> = { ace: 'ACE_BASE_URL', inttra: 'INTTRA_BASE_URL' }
+const BASE_URL_VAR: Record<IntegrationProvider, string> = {
+  ace: 'ACE_BASE_URL',
+  inttra: 'INTTRA_BASE_URL',
+  quickbooks: 'QUICKBOOKS_BASE_URL',
+}
 
 export interface SecretState {
   name: string
@@ -93,6 +107,13 @@ const defaultRow = (provider: IntegrationProvider): SettingsRow => ({
   last_check_mode: null,
   last_check_latency_ms: null,
   last_check_message: null,
+  oauth_state: null,
+  oauth_state_expires_at: null,
+  last_sync_at: null,
+  last_sync_ok: null,
+  last_sync_mode: null,
+  last_sync_count: null,
+  last_sync_message: null,
   updated_by: null,
   updated_at: '',
 })
@@ -148,6 +169,33 @@ export async function saveCheck(env: Env, provider: IntegrationProvider, health:
     .bind(provider, health.checkedAt, health.ok ? 1 : 0, health.mode, health.latencyMs ?? null, health.message, health.checkedAt)
     .run()
 }
+
+// null clears the pending state (after use, or when the user cancelled at the vendor).
+export async function saveOauthState(env: Env, provider: IntegrationProvider, state: string | null, expiresAt: string | null): Promise<void> {
+  const current = await loadRow(env, provider)
+  await env.DB.prepare(
+    `INSERT INTO integration_settings (provider, enabled, mode, oauth_state, oauth_state_expires_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(provider) DO UPDATE SET oauth_state = excluded.oauth_state, oauth_state_expires_at = excluded.oauth_state_expires_at`,
+  )
+    .bind(provider, current.enabled, current.mode, state, expiresAt, current.updated_at || new Date().toISOString())
+    .run()
+}
+
+export async function saveSync(env: Env, provider: IntegrationProvider, sync: InvoiceSync): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO integration_settings (provider, last_sync_at, last_sync_ok, last_sync_mode, last_sync_count, last_sync_message, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(provider) DO UPDATE SET last_sync_at = excluded.last_sync_at, last_sync_ok = excluded.last_sync_ok,
+       last_sync_mode = excluded.last_sync_mode, last_sync_count = excluded.last_sync_count, last_sync_message = excluded.last_sync_message`,
+  )
+    .bind(provider, sync.at, sync.ok ? 1 : 0, sync.mode, sync.count, sync.message, sync.at)
+    .run()
+}
+
+export const toSync = (row: SettingsRow): InvoiceSync | null =>
+  row.last_sync_at && row.last_sync_mode
+    ? { at: row.last_sync_at, ok: row.last_sync_ok === 1, mode: row.last_sync_mode, count: row.last_sync_count, message: row.last_sync_message ?? '' }
+    : null
 
 export function toConfig(row: SettingsRow, creds: Credentials, effectiveMode: IntegrationMode): IntegrationConfig {
   const lastCheck: IntegrationHealth | null =

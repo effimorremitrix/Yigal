@@ -4,14 +4,17 @@ import type {
   IntegrationHealth,
   IntegrationMode,
   IntegrationProvider,
+  InvoiceQuery,
   SailingSchedule,
   ScheduleQuery,
   TrackingEvent,
+  VendorInvoice,
 } from '../../src/types'
 
-export const PROVIDERS: readonly IntegrationProvider[] = ['ace', 'inttra']
+// The single source of truth for valid providers: the database no longer constrains the column.
+export const PROVIDERS: readonly IntegrationProvider[] = ['ace', 'inttra', 'quickbooks']
 export const isProvider = (s: string): s is IntegrationProvider => (PROVIDERS as readonly string[]).includes(s)
-export const PROVIDER_LABEL: Record<IntegrationProvider, string> = { ace: 'CBP ACE', inttra: 'E2open INTTRA' }
+export const PROVIDER_LABEL: Record<IntegrationProvider, string> = { ace: 'CBP ACE', inttra: 'E2open INTTRA', quickbooks: 'Intuit QuickBooks' }
 
 // The subset of a shipment row an adapter needs to talk to a vendor about it.
 export interface ShipmentLookup {
@@ -49,4 +52,9 @@ export interface InttraAdapter extends IntegrationAdapter {
   getTrackingEvents(lookup: ShipmentLookup): Promise<TrackingEvent[]>
   // Defined and mocked, but not routed yet: writes to a real vendor need idempotency and retry design first.
   submitBooking(request: BookingRequest): Promise<BookingAck>
+}
+
+export interface QuickBooksAdapter extends IntegrationAdapter {
+  readonly provider: 'quickbooks'
+  listInvoices(query: InvoiceQuery): Promise<VendorInvoice[]>
 }

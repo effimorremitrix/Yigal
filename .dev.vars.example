@@ -11,3 +11,12 @@ ACE_API_KEY=
 INTTRA_BASE_URL=
 INTTRA_CLIENT_ID=
 INTTRA_API_KEY=
+
+# QuickBooks Online (OAuth 2.0 only). Base URL: https://sandbox-quickbooks.api.intuit.com or
+# https://quickbooks.api.intuit.com. Realm ID and refresh token normally come from the
+# "Connect to QuickBooks" button in Settings > Integrations, or from Intuit's OAuth 2.0 Playground.
+QUICKBOOKS_BASE_URL=
+QUICKBOOKS_CLIENT_ID=
+QUICKBOOKS_CLIENT_SECRET=
+QUICKBOOKS_REALM_ID=
+QUICKBOOKS_REFRESH_TOKEN=

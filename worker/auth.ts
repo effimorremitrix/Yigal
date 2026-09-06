@@ -110,3 +110,10 @@ export function requireRole(user: SessionUser | null, roles: Role[]): SessionUse
   if (!roles.includes(u.role)) throw new HttpError(403, 'Insufficient permissions')
   return u
 }
+
+// Finance data (invoices) stays in-house: role check plus membership of the internal organization.
+export function requireInternal(user: SessionUser | null, roles: Role[]): SessionUser {
+  const u = requireRole(user, roles)
+  if (u.orgType !== 'internal') throw new HttpError(403, 'Available to internal operations users only')
+  return u
+}

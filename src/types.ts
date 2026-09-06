@@ -119,7 +119,7 @@ export interface SailingSchedule {
 // ---- Integrations (CBP ACE customs, E2open INTTRA ocean network) ----
 // Vendor-neutral DTOs. Real vendor payloads are mapped into these inside the worker adapters.
 
-export type IntegrationProvider = 'ace' | 'inttra'
+export type IntegrationProvider = 'ace' | 'inttra' | 'quickbooks'
 export type IntegrationMode = 'mock' | 'live'
 
 export interface IntegrationHealth {
@@ -210,4 +210,53 @@ export interface BookingAck {
   message: string
   at: string
   source: IntegrationMode
+}
+
+// ---- QuickBooks Online: accounts receivable ----
+
+export type InvoiceStatus = 'open' | 'overdue' | 'paid' | 'void'
+
+// One invoice as the vendor reports it, already vendor-neutral. Adapters return these.
+export interface VendorInvoice {
+  externalId: string
+  docNumber: string | null
+  customerId: string | null
+  customerName: string
+  bookingRef: string | null // TL-2026-#### found in the vendor memo / doc number, if any
+  txnDate: string
+  dueDate: string | null
+  currency: string
+  totalAmount: number
+  balance: number
+  vendorStatus: string | null // QBO EmailStatus, or 'Voided'
+  memo: string | null
+  vendorUpdatedAt: string | null
+}
+
+// What the SPA gets: the stored row plus fields derived at read time.
+export interface Invoice extends VendorInvoice {
+  id: number
+  provider: IntegrationProvider
+  shipmentId: string | null // resolved from bookingRef at sync time
+  status: InvoiceStatus // derived from balance, due date and vendor status at read time
+  source: IntegrationMode // mode the row was pulled in
+  syncedAt: string
+}
+
+export interface InvoiceQuery {
+  updatedSince?: string // ISO; adapters may return more than asked, never less
+}
+
+export interface InvoiceSync {
+  at: string
+  ok: boolean
+  mode: IntegrationMode
+  count: number | null
+  message: string
+}
+
+export interface InvoiceListResult {
+  source: IntegrationMode | null // what a pull would use right now; null when the connector is disabled
+  lastSync: InvoiceSync | null
+  invoices: Invoice[]
 }
