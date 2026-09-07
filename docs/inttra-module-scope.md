@@ -46,8 +46,10 @@ one, and no document exchange model to receive one back.
    `booking_confirmed`, `container_gate_in`, `loaded_on_vessel`, `vessel_departed`, `transshipment`,
    `vessel_arrived`, `gate_out`, `delivered`. Confirming this before signing avoids a mapping
    surprise afterwards.
-6. **Carrier coverage per module** across our nine trade lanes (`LANES` in `src/data/constants.ts`).
-   INTTRA coverage varies by carrier and by module.
+6. **Carrier coverage per module** across our eight trade lanes (`LANES` in `src/data/constants.ts`):
+   CNSHA-NLRTM, CNNGB-USLAX, ILHFA-DEHAM, KRPUS-BEANR, CNSHA-DEHAM, AEJEA-NLRTM, ILHFA-USNYC,
+   CNNGB-GBFXT. Three route via Singapore, so transshipment events matter as much as origin and
+   destination ones. INTTRA coverage varies by carrier and by module.
 7. **Rate limits and SLA** per module, and what happens on breach.
 
 **Open input, needed from us before they can quote:** expected production volume. Specifically
