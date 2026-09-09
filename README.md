@@ -4,6 +4,8 @@ A full-stack demo of a BuyCo-style ocean freight platform ("Command your contain
 
 Live: https://yigal.effi-mor-e04.workers.dev/
 
+Hebrew workflow guide (business + development): [`docs/workflow-guide.he.md`](docs/workflow-guide.he.md)
+
 ## Modules
 
 - **Control Tower dashboard** — KPIs, exceptions, arrivals, activity feed, volume chart
