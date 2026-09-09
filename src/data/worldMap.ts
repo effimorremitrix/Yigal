@@ -78,3 +78,118 @@ export function project(lat: number, lon: number): [number, number] {
   const y = ((LAT_TOP - lat) / LAT_SPAN) * MAP_H
   return [x, y]
 }
+
+// ---- Shared route geometry (used by the fleet map and the per-shipment route map) ----
+
+/** Trade-lane waypoints are [lat, lon], the opposite order from the continent outlines. */
+export type LatLon = [number, number]
+
+/**
+ * Projection without the longitude wrap. Transpacific lane waypoints carry
+ * longitudes past 180, so an unwrapped route is one continuous polyline instead
+ * of two pieces at opposite edges of the map. Callers that use it must tile the
+ * continents with `worldTiles` to fill the space it can reach into.
+ */
+export function projectRaw(lat: number, lon: number): [number, number] {
+  const x = ((lon + 180) / 360) * MAP_W
+  const y = ((LAT_TOP - lat) / LAT_SPAN) * MAP_H
+  return [x, y]
+}
+
+function toPath(pts: [number, number][]): string {
+  return pts.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
+}
+
+/** Splits a wrap-projected polyline wherever it crosses the antimeridian. */
+export function toPathSegments(waypoints: LatLon[]): string[] {
+  const pts = waypoints.map(([lat, lon]) => project(lat, lon))
+  const segments: string[] = []
+  let current: [number, number][] = [pts[0]]
+  for (let i = 1; i < pts.length; i++) {
+    if (Math.abs(pts[i][0] - pts[i - 1][0]) > MAP_W / 2) {
+      segments.push(toPath(current))
+      current = [pts[i]]
+    } else {
+      current.push(pts[i])
+    }
+  }
+  segments.push(toPath(current))
+  return segments.filter((s) => s.includes('L'))
+}
+
+/** One continuous path through the waypoints, in unwrapped longitude space. */
+export function toContinuousPath(waypoints: LatLon[]): string {
+  return toPath(waypoints.map(([lat, lon]) => projectRaw(lat, lon)))
+}
+
+/** Position along the lane's waypoints at fraction t, in unwrapped lon space. */
+export function positionAlong(waypoints: LatLon[], t: number): LatLon {
+  const dists: number[] = [0]
+  for (let i = 1; i < waypoints.length; i++) {
+    const [la1, lo1] = waypoints[i - 1]
+    const [la2, lo2] = waypoints[i]
+    dists.push(dists[i - 1] + Math.hypot(la2 - la1, lo2 - lo1))
+  }
+  const target = t * dists[dists.length - 1]
+  for (let i = 1; i < dists.length; i++) {
+    if (dists[i] >= target) {
+      const f = (target - dists[i - 1]) / (dists[i] - dists[i - 1] || 1)
+      const [la1, lo1] = waypoints[i - 1]
+      const [la2, lo2] = waypoints[i]
+      return [la1 + (la2 - la1) * f, lo1 + (lo2 - lo1) * f]
+    }
+  }
+  return waypoints[waypoints.length - 1]
+}
+
+export interface ViewBox {
+  x: number
+  y: number
+  w: number
+  h: number
+  /** viewBox width relative to the full world, for scaling strokes and labels. */
+  k: number
+}
+
+/** A viewBox framing the given unwrapped points, at the world map's aspect ratio. */
+export function frameArea(pts: [number, number][], padding = 0.35): ViewBox {
+  const xs = pts.map((p) => p[0])
+  const ys = pts.map((p) => p[1])
+  const minX = Math.min(...xs)
+  const maxX = Math.max(...xs)
+  const minY = Math.min(...ys)
+  const maxY = Math.max(...ys)
+
+  const aspect = MAP_W / MAP_H
+  let w = Math.max(maxX - minX, 1) * (1 + padding * 2)
+  let h = Math.max(maxY - minY, 1) * (1 + padding * 2)
+  if (w / h < aspect) w = h * aspect
+  else h = w / aspect
+  if (w > MAP_W) {
+    w = MAP_W
+    h = MAP_H
+  }
+
+  const cx = (minX + maxX) / 2
+  const cy = (minY + maxY) / 2
+  // x is free to run outside the world band — `worldTiles` fills what it reaches.
+  return { x: cx - w / 2, y: Math.min(Math.max(cy - h / 2, 0), MAP_H - h), w, h, k: w / MAP_W }
+}
+
+/**
+ * Horizontal offsets at which to repeat the continent outlines so they cover the
+ * view. The viewBox clips them, which draws a seamlessly wrapped world without
+ * having to cut any polygon.
+ */
+export function worldTiles(view: ViewBox): number[] {
+  const first = Math.floor(view.x / MAP_W)
+  const last = Math.floor((view.x + view.w) / MAP_W)
+  const tiles: number[] = []
+  for (let i = first; i <= last; i++) tiles.push(i * MAP_W)
+  return tiles
+}
+
+/** The copy of `x` (one per world tile) that sits closest to `near`. */
+export function nearestX(x: number, near: number): number {
+  return x + MAP_W * Math.round((near - x) / MAP_W)
+}

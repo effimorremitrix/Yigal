@@ -9,7 +9,7 @@ Hebrew workflow guide (business + development): [`docs/workflow-guide.he.md`](do
 ## Modules
 
 - **Control Tower dashboard** — KPIs, exceptions, arrivals, activity feed, volume chart
-- **Shipments** — searchable table → detail with milestone timeline, containers, documents (approve), parties, comment thread
+- **Shipments** — searchable table → detail with a ports-of-call route map (each call expands to its schedule and ETA), milestone timeline, containers, documents (approve), parties, comment thread
 - **New Booking** — 4-step wizard that persists a real shipment to the database
 - **Track & Trace** — offline SVG world map with vessel positions along real trade-lane routes
 - **Documents** — cross-shipment registry with filters

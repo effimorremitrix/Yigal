@@ -369,6 +369,36 @@ test('ops user books a shipment that persists, with comment and approval', async
   await expect(approveButtons).toHaveCount(before - 1)
 })
 
+test('shipment map marks every port of call and expands one with its ETA', async ({ page }) => {
+  await login(page, 'ops@tidelane.demo')
+  // s36 is seeded mid-voyage: Busan → Singapore (transshipment) → Antwerp.
+  await page.goto('/shipments/s36')
+  await expect(page.getByText('Ports of call')).toBeVisible()
+
+  // One marker per planned call, in sailing order.
+  const markers = page.locator('svg[role="img"] g[role="button"]')
+  await expect(markers).toHaveCount(3)
+  await expect(markers.nth(0)).toHaveAttribute('aria-label', /^Busan — Load port, Departed /)
+  await expect(markers.nth(1)).toHaveAttribute('aria-label', /^Singapore — Transshipment, Arrived /)
+  await expect(markers.nth(2)).toHaveAttribute('aria-label', /^Antwerp — Discharge port, ETA /)
+
+  // No widget until a port is picked; then it carries that port's details and ETA.
+  await expect(page.getByTestId('port-call-widget')).toHaveCount(0)
+  await markers.nth(2).click()
+  const widget = page.getByTestId('port-call-widget').first()
+  await expect(widget).toContainText('BEANR · Belgium · Discharge port')
+  await expect(widget).toContainText('Next call')
+  await expect(widget).toContainText('Vessel arrived')
+  await expect(widget).toContainText('Delivered')
+
+  // The port summaries under the map (the toggles) select the same call.
+  await page.locator('button[aria-pressed]').filter({ hasText: 'Busan' }).click()
+  await expect(page.getByTestId('port-call-widget').first()).toContainText('KRPUS · South Korea · Load port')
+
+  await page.getByRole('button', { name: 'Close port details' }).first().click()
+  await expect(page.getByTestId('port-call-widget')).toHaveCount(0)
+})
+
 test('user guide renders logged out with demo accounts', async ({ page }) => {
   await page.goto('/guide')
   await expect(page.getByText('What is Tidelane?')).toBeVisible()
