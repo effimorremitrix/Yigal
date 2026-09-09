@@ -67,7 +67,7 @@ npx wrangler secret put QUICKBOOKS_CLIENT_ID
 npx wrangler secret put QUICKBOOKS_CLIENT_SECRET
 ```
 
-Generate the master key with `openssl rand -base64 32` and keep it: rotating it makes every stored credential unreadable, which degrades the affected provider to mock (the UI shows *Stored, unreadable*) until the keys are re-entered. Fallback base URLs stay under `vars` in `wrangler.jsonc` (`ACE_BASE_URL`, `INTTRA_BASE_URL`, `QUICKBOOKS_BASE_URL`). The ACE and INTTRA live payload mappers throw an explicit "not implemented" error until the vendor specs are wired in, so keep those two in Mock mode until then.
+Generate the master key with `openssl rand -base64 32` and keep it: rotating it makes every stored credential unreadable, which degrades the affected provider to mock (the UI shows *Stored, unreadable*) until the keys are re-entered. Fallback base URLs stay under `vars` in `wrangler.jsonc` (`ACE_BASE_URL`, `INTTRA_BASE_URL`, `QUICKBOOKS_BASE_URL`). The ACE and INTTRA live payload mappers throw an explicit "not implemented" error until the vendor specs are wired in, so keep those two in Mock mode until then. Which INTTRA modules we license, and what each one unblocks in the app, is scoped in [`docs/inttra-module-scope.md`](docs/inttra-module-scope.md).
 
 ### QuickBooks: two ways to connect
 
