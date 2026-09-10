@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext'
 import { Card } from '../components/ui/Card'
 import { Select } from '../components/ui/inputs'
 import { apiFetch } from '../lib/api'
-import { CONTAINER_TYPES, LANES, PORTS } from '../data/constants'
+import { CONTAINER_TYPES, INCOTERMS, LANES, PORTS } from '../data/constants'
 import { addDays, fmtDate, iso, TODAY } from '../data/random'
 import type { Incoterm, SailingSchedule, ScheduleResult } from '../types'
 
@@ -194,7 +194,7 @@ export default function BookingPage() {
                 <Select
                   value={incoterm}
                   onChange={(v) => setIncoterm(v as Incoterm)}
-                  options={(['FOB', 'CIF', 'EXW', 'DDP'] as const).map((t) => ({ value: t, label: t }))}
+                  options={INCOTERMS.map((t) => ({ value: t, label: t }))}
                 />
               </label>
             </div>
