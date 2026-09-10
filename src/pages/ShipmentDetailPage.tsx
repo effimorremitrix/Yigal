@@ -7,6 +7,7 @@ import { Card, CardHeader } from '../components/ui/Card'
 import Tabs from '../components/ui/Tabs'
 import { DocStatusBadge, ShipmentStatusBadge } from '../components/ui/StatusBadge'
 import MilestoneTimeline from '../components/shipments/MilestoneTimeline'
+import RouteMap from '../components/map/RouteMap'
 import { fmtDate, fmtDateShort } from '../data/random'
 import { EmptyState } from '../components/ui/inputs'
 
@@ -91,6 +92,13 @@ export default function ShipmentDetailPage() {
             </div>
           ))}
         </dl>
+      </Card>
+
+      <Card>
+        <CardHeader title="Ports of call" subtitle="Select a port for its schedule and ETA" />
+        <div className="px-5 pb-5 pt-4">
+          <RouteMap shipment={s} />
+        </div>
       </Card>
 
       <Card>
