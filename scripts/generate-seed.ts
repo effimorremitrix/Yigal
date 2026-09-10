@@ -38,9 +38,9 @@ const orgByName = new Map(orgs.map((o) => [o.name, o.id]))
 
 // --- Users -------------------------------------------------------------------
 const users = [
-  { id: 1, email: 'effi@tidelane.demo', name: 'Effi Mor', title: 'Logistics Manager', role: 'admin', org: 'Tidelane' },
-  { id: 2, email: 'ops@tidelane.demo', name: 'Noa Adler', title: 'Operations Specialist', role: 'ops', org: 'Tidelane' },
-  { id: 3, email: 'viewer@tidelane.demo', name: 'Guy Peled', title: 'Supply Chain Analyst', role: 'viewer', org: 'Tidelane' },
+  { id: 1, email: 'yigal.tzfira@galco-intl.com', name: 'Yigal Tzfira', title: 'Managing Director', role: 'admin', org: 'Tidelane' },
+  { id: 2, email: 'effi.mor@galco-intl.com', name: 'Effi Mor', title: 'Operations Specialist', role: 'ops', org: 'Tidelane' },
+  { id: 3, email: 'ben.mor@galco-intl.com', name: 'Ben Mor', title: 'Supply Chain Analyst', role: 'viewer', org: 'Tidelane' },
   { id: 4, email: 'dana@atlaspolymers.demo', name: 'Dana Weiss', title: 'Export Manager', role: 'ops', org: 'Atlas Polymers Ltd' },
   { id: 5, email: 'amit@globalfreight.demo', name: 'Amit Shalev', title: 'Freight Coordinator', role: 'ops', org: 'GlobalFreight Partners' },
   { id: 6, email: 'pieter@northline.demo', name: 'Pieter van Dam', title: 'Import Planner', role: 'viewer', org: 'Northline Imports BV' },

@@ -93,6 +93,6 @@ Route `submitBooking` as `POST /api/integrations/inttra/shipments/:id/booking`, 
 ## Verification
 
 - `npm run build` (type-checks app + worker + scripts).
-- `npm run db:reset:local && npm run dev:worker`, log in as `effi@tidelane.demo` / `tidelane-demo`, open the Deckhand page, press Sync, confirm 8 drafts with sender matches; approve one and confirm a `TL-2026-####` shipment appears in Shipments with the right shipper party.
+- `npm run db:reset:local && npm run dev:worker`, log in as `yigal.tzfira@galco-intl.com` / `tidelane-demo`, open the Deckhand page, press Sync, confirm 8 drafts with sender matches; approve one and confirm a `TL-2026-####` shipment appears in Shipments with the right shipper party.
 - Confirm a partner login (`dana@atlaspolymers.demo`) gets 403 on `/api/deckhand/drafts` and no sidebar item.
 - New e2e cases in `e2e/app.spec.ts` following the existing integration tests: mock sync is deterministic (same 8 external ids twice, no duplicate rows), an unknown sender blocks approval until an org is chosen, approval persists a shipment across reload, and a partner org is denied. Run `npm run db:reset:local` first — `workers: 1`, shared D1.

@@ -31,7 +31,7 @@ Tidelane is a complete, working application and it is currently a **demo**, not 
 | Area | Reality |
 |---|---|
 | Data | Seeded and generated. 18 organizations, 7 users, 42 shipments. None of Yigal's real shipments are in it. |
-| Accounts | Seven `*.demo` accounts sharing the password `tidelane-demo`, listed on `/guide`, which is readable before login. |
+| Accounts | Seven demo accounts sharing the password `tidelane-demo`, listed on `/guide`, which is readable before login. The three internal ones now carry Yigal's real addresses (`yigal.tzfira@`, `effi.mor@`, `ben.mor@galco-intl.com`); the four partner ones are still `*.demo`. Real address, shared demo password: the security items below still apply, unchanged. |
 | QuickBooks | **Real.** OAuth 2.0, live invoice pull, invoices matched to shipments by `TL-2026-####` booking ref. The only connector that can go live. |
 | CBP ACE | Mock only. The live payload mapper throws "not implemented" on purpose. |
 | E2open INTTRA | Mock only, same reason. Real API access requires a vendor agreement, not code. |
@@ -112,7 +112,7 @@ Seven three-hour sessions, 07:00 to 10:00, 24 to 30 September, at Yigal's apartm
 
 ### Definition of done — Tidelane
 
-- [ ] Yigal has his own admin account; the seven `.demo` accounts no longer exist in his environment
+- [ ] Yigal's admin account has a password only he knows; the four partner `.demo` accounts no longer exist in his environment
 - [ ] At least five of his real shipments in the database with his real parties
 - [ ] QuickBooks connected live; one invoice pull reconciles against a real shipment
 - [ ] He completes one real booking and one document approval unassisted
@@ -121,7 +121,7 @@ Seven three-hour sessions, 07:00 to 10:00, 24 to 30 September, at Yigal's apartm
 
 ### Security items that must close before any real shipment data is loaded
 
-- [ ] Remove the shared demo password and the seven `.demo` accounts
+- [ ] Remove the shared demo password from all seven accounts, and delete the four partner `.demo` accounts
 - [ ] Empty or close `/guide`, which currently lists demo accounts pre-login
 - [ ] `CREDENTIALS_KEY` generated properly, stored off Effi's laptop, known to a second person
 - [ ] Transfer the Cloudflare account, worker, D1 database and Intuit developer app to Yigal

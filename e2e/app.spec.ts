@@ -15,16 +15,16 @@ test.describe.configure({ mode: 'serial' })
 test('redirects to login and rejects a bad password', async ({ page }) => {
   await page.goto('/shipments')
   await expect(page).toHaveURL(/\/login$/)
-  await page.getByLabel('Email').fill('effi@tidelane.demo')
+  await page.getByLabel('Email').fill('yigal.tzfira@galco-intl.com')
   await page.getByLabel('Password').fill('wrong-password')
   await page.getByRole('button', { name: 'Sign in' }).click()
   await expect(page.getByText('Invalid email or password')).toBeVisible()
 })
 
 test('admin logs in, sees dashboard and all shipments, then logs out', async ({ page }) => {
-  await login(page, 'effi@tidelane.demo')
+  await login(page, 'yigal.tzfira@galco-intl.com')
   await expect(page.getByText('Control Tower')).toBeVisible()
-  await expect(page.getByTestId('user-menu')).toContainText('Effi Mor')
+  await expect(page.getByTestId('user-menu')).toContainText('Yigal Tzfira')
 
   await page.goto('/shipments')
   await expect(page.getByText('42 of 42 shipments')).toBeVisible()
@@ -37,7 +37,7 @@ test('admin logs in, sees dashboard and all shipments, then logs out', async ({ 
 })
 
 test('viewer has no write affordances', async ({ page }) => {
-  await login(page, 'viewer@tidelane.demo')
+  await login(page, 'ben.mor@galco-intl.com')
   await expect(page.getByRole('link', { name: 'Shipments' })).toBeVisible()
   await expect(page.getByRole('link', { name: 'New Booking' })).toHaveCount(0)
 
@@ -90,7 +90,7 @@ test('partner user sees only their org shipments', async ({ page }) => {
 })
 
 test('settings persist across reload', async ({ page }) => {
-  await login(page, 'effi@tidelane.demo')
+  await login(page, 'yigal.tzfira@galco-intl.com')
   await page.goto('/settings')
   await page.getByTestId('profile-title').fill('Head of Global Logistics')
   await page.getByRole('button', { name: 'Save profile' }).click()
@@ -108,7 +108,7 @@ test('settings persist across reload', async ({ page }) => {
 })
 
 test('admin manages integrations in mock mode', async ({ page }) => {
-  await login(page, 'effi@tidelane.demo')
+  await login(page, 'yigal.tzfira@galco-intl.com')
   await page.goto('/settings')
   await page.getByRole('button', { name: 'Integrations' }).click()
   const ace = page.getByTestId('integration-ace')
@@ -161,7 +161,7 @@ test('admin saves and clears integration credentials from the UI', async ({ page
   const CLIENT_ID = 'inttra-client-e2e-9876'
   const API_KEY = 'inttra-secret-e2e-5432'
 
-  await login(page, 'effi@tidelane.demo')
+  await login(page, 'yigal.tzfira@galco-intl.com')
   await page.goto('/settings')
   await page.getByRole('button', { name: 'Integrations' }).click()
   const inttra = page.getByTestId('integration-inttra')
@@ -218,7 +218,7 @@ test('admin connects QuickBooks (mock) and internal ops see invoices', async ({ 
   const CLIENT_SECRET = 'qb-secret-e2e-2222'
   const CALLBACK = '/api/integrations/quickbooks/oauth/callback'
 
-  await login(page, 'effi@tidelane.demo')
+  await login(page, 'yigal.tzfira@galco-intl.com')
   await page.goto('/settings')
   await page.getByRole('button', { name: 'Integrations' }).click()
   const qb = page.getByTestId('integration-quickbooks')
@@ -306,7 +306,7 @@ test('admin connects QuickBooks (mock) and internal ops see invoices', async ({ 
   // Internal ops users get the same view; the pull button re-runs an idempotent upsert.
   await page.getByTestId('user-menu').click()
   await page.getByRole('button', { name: 'Log out' }).click()
-  await login(page, 'ops@tidelane.demo')
+  await login(page, 'effi.mor@galco-intl.com')
   await expect(page.getByRole('link', { name: 'Invoices' })).toBeVisible()
   await page.goto('/invoices')
   await page.getByTestId('invoices-sync').click()
@@ -316,7 +316,7 @@ test('admin connects QuickBooks (mock) and internal ops see invoices', async ({ 
   // Leave the shared database as the other tests expect it (invoice rows are harmless; credentials are not).
   await page.getByTestId('user-menu').click()
   await page.getByRole('button', { name: 'Log out' }).click()
-  await login(page, 'effi@tidelane.demo')
+  await login(page, 'yigal.tzfira@galco-intl.com')
   const reset = await page.request.put('/api/integrations/quickbooks/credentials', {
     data: { baseUrl: null, secrets: { QUICKBOOKS_CLIENT_ID: null, QUICKBOOKS_CLIENT_SECRET: null, QUICKBOOKS_REALM_ID: null, QUICKBOOKS_REFRESH_TOKEN: null } },
   })
@@ -325,7 +325,7 @@ test('admin connects QuickBooks (mock) and internal ops see invoices', async ({ 
 })
 
 test('ops user books a shipment that persists, with comment and approval', async ({ page }) => {
-  await login(page, 'ops@tidelane.demo')
+  await login(page, 'effi.mor@galco-intl.com')
   await page.goto('/booking')
 
   await page.getByRole('button', { name: 'Continue' }).click() // route defaults
@@ -398,7 +398,7 @@ const BOOKING_SCRIPT = `(async (n) => {
 })`
 
 test('concurrent bookings get distinct references and none fail', async ({ page }) => {
-  await login(page, 'ops@tidelane.demo')
+  await login(page, 'effi.mor@galco-intl.com')
   // The wizard books one at a time, so the read-then-write race on TL-2026-#### only opens
   // when several bookings land together — which is exactly what a bulk data load does.
   const results = await page.evaluate(`${BOOKING_SCRIPT}(6)`) as { status: number; body: { bookingRef?: string; error?: string } }[]
@@ -410,7 +410,7 @@ test('concurrent bookings get distinct references and none fail', async ({ page 
 })
 
 test('the booking endpoint rejects invalid payloads at the boundary', async ({ page }) => {
-  await login(page, 'ops@tidelane.demo')
+  await login(page, 'effi.mor@galco-intl.com')
   const reject = (patch: Record<string, unknown>) =>
     page.evaluate(async (p) => {
       const day = 86400000
@@ -469,7 +469,7 @@ test('the booking endpoint rejects invalid payloads at the boundary', async ({ p
 })
 
 test('every shipment party resolves to an organization', async ({ page }) => {
-  await login(page, 'effi@tidelane.demo')
+  await login(page, 'yigal.tzfira@galco-intl.com')
   // The symptom of an unresolved party is invisibility, so check it from the partner's side:
   // a shipment Atlas Polymers is a party to must be reachable by an Atlas Polymers user.
   const shipments = (await page.evaluate(`fetch('/api/shipments').then((r) => r.json())`)) as {
@@ -488,7 +488,7 @@ test('every shipment party resolves to an organization', async ({ page }) => {
 })
 
 test('shipment map marks every port of call and expands one with its ETA', async ({ page }) => {
-  await login(page, 'ops@tidelane.demo')
+  await login(page, 'effi.mor@galco-intl.com')
   // s36 is seeded mid-voyage: Busan → Singapore (transshipment) → Antwerp.
   await page.goto('/shipments/s36')
   await expect(page.getByText('Ports of call')).toBeVisible()
@@ -545,7 +545,7 @@ async function deckhandExtract(page: Page, text: string) {
 }
 
 test('deckhand pairs a container with the seal shown beside it', async ({ page }) => {
-  await login(page, 'ops@tidelane.demo')
+  await login(page, 'effi.mor@galco-intl.com')
   const block = await deckhandExtract(page, ALIGNED_EMAIL)
 
   expect(block).toContain('SHPX-99120')
@@ -558,7 +558,7 @@ test('deckhand pairs a container with the seal shown beside it', async ({ page }
 })
 
 test('deckhand refuses to pair containers and seals listed separately', async ({ page }) => {
-  await login(page, 'ops@tidelane.demo')
+  await login(page, 'effi.mor@galco-intl.com')
   const block = await deckhandExtract(page, UNALIGNED_EMAIL)
 
   // This is the failure that matters: a seal on the wrong container. Nothing may be paired.
@@ -569,7 +569,7 @@ test('deckhand refuses to pair containers and seals listed separately', async ({
 })
 
 test('deckhand flags a failed ISO 6346 check digit instead of correcting it', async ({ page }) => {
-  await login(page, 'ops@tidelane.demo')
+  await login(page, 'effi.mor@galco-intl.com')
   // TGHU7654320 is valid; changing the last digit must be reported, never silently repaired.
   const block = await deckhandExtract(page, 'Container TGHU7654321 | Seal No: SL-1')
   expect(block).toContain('TGHU7654321')
@@ -578,7 +578,7 @@ test('deckhand flags a failed ISO 6346 check digit instead of correcting it', as
 })
 
 test('deckhand prints missing fields rather than dropping them', async ({ page }) => {
-  await login(page, 'ops@tidelane.demo')
+  await login(page, 'effi.mor@galco-intl.com')
   const block = await deckhandExtract(page, 'Container CSQU3054383 | Seal No: SL-9')
   for (const label of ['Booking / shipment ref', 'Vessel / voyage', 'Ports (POL → POD)', 'Anything I am unsure of']) {
     expect(block).toContain(label)
@@ -587,7 +587,7 @@ test('deckhand prints missing fields rather than dropping them', async ({ page }
 })
 
 test('deckhand is internal-only and writes nothing', async ({ page, request }) => {
-  await login(page, 'ops@tidelane.demo')
+  await login(page, 'effi.mor@galco-intl.com')
   const before = await page.evaluate(`fetch('/api/shipments').then((r) => r.json()).then((s) => s.length)`)
   await deckhandExtract(page, ALIGNED_EMAIL)
   const after = await page.evaluate(`fetch('/api/shipments').then((r) => r.json()).then((s) => s.length)`)
@@ -604,9 +604,14 @@ test('deckhand is internal-only and writes nothing', async ({ page, request }) =
   void request
 })
 
-test('user guide renders logged out with demo accounts', async ({ page }) => {
+test('user guide renders logged out with accounts, workflow and Deckhand', async ({ page }) => {
   await page.goto('/guide')
   await expect(page.getByText('What is Tidelane?')).toBeVisible()
-  await expect(page.getByText('effi@tidelane.demo').first()).toBeVisible()
+  await expect(page.getByText('yigal.tzfira@galco-intl.com').first()).toBeVisible()
   await expect(page.getByText('Roles & permissions')).toBeVisible()
+  await expect(page.getByText('How the work flows')).toBeVisible()
+  await expect(page.getByText('Shipment lifecycle')).toBeVisible()
+  // Deckhand's own section, not just its row in the module list.
+  await expect(page.getByText('Stop retyping shipment and seal numbers out of email')).toBeVisible()
+  await expect(page.getByText('Common scenarios')).toBeVisible()
 })
