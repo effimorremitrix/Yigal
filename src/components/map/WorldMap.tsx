@@ -1,54 +1,13 @@
 import { useMemo, useState } from 'react'
 import type { Shipment } from '../../types'
 import { LANES, PORTS } from '../../data/constants'
-import { CONTINENTS, MAP_H, MAP_W, project } from '../../data/worldMap'
+import { CONTINENTS, MAP_H, MAP_W, positionAlong, project, toPathSegments } from '../../data/worldMap'
 import { fmtDateShort } from '../../data/random'
 
 interface VesselPin {
   shipment: Shipment
   x: number
   y: number
-}
-
-// Splits a projected polyline wherever it wraps across the antimeridian.
-function toPathSegments(waypoints: [number, number][]): string[] {
-  const pts = waypoints.map(([lat, lon]) => project(lat, lon))
-  const segments: string[] = []
-  let current: [number, number][] = [pts[0]]
-  for (let i = 1; i < pts.length; i++) {
-    if (Math.abs(pts[i][0] - pts[i - 1][0]) > MAP_W / 2) {
-      segments.push(toPath(current))
-      current = [pts[i]]
-    } else {
-      current.push(pts[i])
-    }
-  }
-  segments.push(toPath(current))
-  return segments.filter((s) => s.includes('L'))
-}
-
-function toPath(pts: [number, number][]): string {
-  return pts.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
-}
-
-// Position along the lane's waypoints at fraction t, in unwrapped lon space.
-function positionAlong(waypoints: [number, number][], t: number): [number, number] {
-  const dists: number[] = [0]
-  for (let i = 1; i < waypoints.length; i++) {
-    const [la1, lo1] = waypoints[i - 1]
-    const [la2, lo2] = waypoints[i]
-    dists.push(dists[i - 1] + Math.hypot(la2 - la1, lo2 - lo1))
-  }
-  const target = t * dists[dists.length - 1]
-  for (let i = 1; i < dists.length; i++) {
-    if (dists[i] >= target) {
-      const f = (target - dists[i - 1]) / (dists[i] - dists[i - 1] || 1)
-      const [la1, lo1] = waypoints[i - 1]
-      const [la2, lo2] = waypoints[i]
-      return [la1 + (la2 - la1) * f, lo1 + (lo2 - lo1) * f]
-    }
-  }
-  return waypoints[waypoints.length - 1]
 }
 
 // Nudge labels of clustered ports (North Sea, East China Sea) apart.

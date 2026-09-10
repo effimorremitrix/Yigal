@@ -45,7 +45,7 @@ const MODULES = [
   {
     icon: Ship,
     name: 'Shipments',
-    text: 'Search and filter every shipment your organization can see. Click a row for the full journey: milestone timeline (planned vs actual), containers, documents, parties and the collaboration thread.',
+    text: 'Search and filter every shipment your organization can see. Click a row for the full journey: a route map of the ports the vessel is due to call at — click one for its schedule and ETA — plus the milestone timeline (planned vs actual), containers, documents, parties and the collaboration thread.',
   },
   {
     icon: CalendarPlus,
