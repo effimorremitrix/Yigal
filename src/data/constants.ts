@@ -128,6 +128,8 @@ export const LANES: TradeLane[] = [
 
 export const CONTAINER_TYPES = ['20DV', '40DV', '40HC', '40RF'] as const
 
+export const INCOTERMS = ['FOB', 'CIF', 'EXW', 'DDP'] as const
+
 export const COMMODITIES = [
   'Auto parts',
   'Polymer resin',

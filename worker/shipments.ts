@@ -1,7 +1,8 @@
 import { HttpError, json, type Env, type SessionUser } from './env'
-import { LANES, PORTS } from '../src/data/constants'
+import { PORTS } from '../src/data/constants'
 import type { Milestone, Shipment } from '../src/types'
 import type { InvoiceSeed } from './integrations/quickbooks/mock'
+import { validateBooking, type BookingPayload } from './booking'
 
 export interface ShipmentRow {
   id: string
@@ -173,45 +174,66 @@ export async function getShipment(env: Env, user: SessionUser, id: string): Prom
   return json(shipment)
 }
 
-interface BookingPayload {
-  originCode: string
-  destinationCode: string
-  incoterm: string
-  commodity: string
-  weightKg: number
-  containers: Partial<Record<string, number>>
-  schedule: {
-    carrier: string
-    scac: string
-    vesselName: string
-    voyage: string
-    etd: string
-    eta: string
-    transitDays: number
-    co2PerTeuTons: number
-    costPerTeuUsd: number
-  }
-}
-
 const addDays = (baseIso: string, days: number): string => new Date(new Date(baseIso).getTime() + days * 86400000).toISOString()
 
-export async function createShipment(env: Env, user: SessionUser, payload: BookingPayload): Promise<Response> {
-  const lane = LANES.find((l) => l.origin === payload.originCode && l.destination === payload.destinationCode)
-  if (!lane) throw new HttpError(400, 'Unknown trade lane')
-  const origin = PORTS[payload.originCode]
-  const destination = PORTS[payload.destinationCode]
-  const sched = payload.schedule
-  const totalContainers = Object.values(payload.containers).reduce((a: number, b) => a + (b ?? 0), 0)
-  if (totalContainers < 1 || totalContainers > 50) throw new HttpError(400, 'Invalid container count')
-  const totalTeu = Object.entries(payload.containers).reduce((a, [t, count]) => a + (count ?? 0) * (t === '20DV' ? 1 : 2), 0)
+// booking_ref (and the id derived from it) carry a UNIQUE constraint, so a lost race between
+// two concurrent bookings fails the write rather than duplicating a reference. Re-reading the
+// high-water mark and retrying turns that failure into the next free reference.
+const REF_ATTEMPTS = 5
+const isUniqueConflict = (err: unknown): boolean =>
+  err instanceof Error && /UNIQUE constraint failed|SQLITE_CONSTRAINT/i.test(err.message)
 
+async function nextRefNum(env: Env): Promise<number> {
   const maxRef = await env.DB.prepare(
     `SELECT MAX(CAST(substr(booking_ref, 9) AS INTEGER)) AS m FROM shipments WHERE booking_ref LIKE 'TL-2026-%'`,
   ).first<{ m: number | null }>()
-  const refNum = (maxRef?.m ?? 100) + 1
-  const bookingRef = `TL-2026-${String(refNum).padStart(4, '0')}`
-  const id = `b-${refNum}`
-  const now = new Date().toISOString()
+  return (maxRef?.m ?? 100) + 1
+}
+
+interface PartySlot {
+  name: string
+  role: string
+  contact: string
+  orgId: number
+}
+
+/**
+ * Every party must resolve to an organization. org_id is what partner visibility is scoped by
+ * (see scopeClause), so a party stored without one produces a shipment its own partner can
+ * never see — silently. An unmatched name is a caller error and is refused here rather than
+ * written as NULL; migration 0006 makes the database enforce the same invariant.
+ */
+async function resolveParties(env: Env, wanted: { name: string; role: string; contact: string }[]): Promise<PartySlot[]> {
+  const orgRows = await env.DB.prepare('SELECT id, name FROM organizations').all<{ id: number; name: string }>()
+  const orgByName = new Map(orgRows.results.map((o) => [o.name, o.id]))
+  const unmatched = wanted.filter((p) => !orgByName.has(p.name))
+  if (unmatched.length > 0) {
+    const names = unmatched.map((p) => `"${p.name}" (${p.role})`).join(', ')
+    throw new HttpError(400, `No organization matches ${names}. Party names must match an existing organization exactly.`)
+  }
+  return wanted.map((p) => ({ ...p, orgId: orgByName.get(p.name)! }))
+}
+
+export async function createShipment(env: Env, user: SessionUser, payload: BookingPayload): Promise<Response> {
+  const booking = validateBooking(payload)
+  const { lane, origin, destination, schedule: sched } = booking
+
+  // Default demo parties; a partner user's own org always appears in its role slot
+  // so the shipment is visible to them afterwards.
+  const wantedParties = [
+    { name: 'Atlas Polymers Ltd', role: 'shipper', contact: 'Dana Weiss' },
+    { name: 'Northline Imports BV', role: 'consignee', contact: 'Pieter van Dam' },
+    { name: 'GlobalFreight Partners', role: 'forwarder', contact: 'Amit Shalev' },
+    { name: sched.carrier, role: 'carrier', contact: 'Operations desk' },
+  ]
+  if (user.orgType !== 'internal') {
+    const slot = wantedParties.find((p) => p.role === user.orgType)
+    if (slot) {
+      slot.name = user.orgName
+      slot.contact = user.name
+    }
+  }
+  const parties = await resolveParties(env, wantedParties)
 
   const milestonesPlan: { key: string; label: string; location: string; offset: number }[] = [
     { key: 'booking_confirmed', label: 'Booking confirmed', location: origin.name, offset: -7 },
@@ -226,115 +248,113 @@ export async function createShipment(env: Env, user: SessionUser, payload: Booki
     { key: 'delivered', label: 'Delivered', location: `${destination.name} area`, offset: sched.transitDays + 4 },
   ]
 
-  // Default demo parties; a partner user's own org always appears in its role slot
-  // so the shipment is visible to them afterwards.
-  const parties = [
-    { name: 'Atlas Polymers Ltd', role: 'shipper', contact: 'Dana Weiss' },
-    { name: 'Northline Imports BV', role: 'consignee', contact: 'Pieter van Dam' },
-    { name: 'GlobalFreight Partners', role: 'forwarder', contact: 'Amit Shalev' },
-    { name: sched.carrier, role: 'carrier', contact: 'Operations desk' },
-  ]
-  if (user.orgType !== 'internal') {
-    const slot = parties.find((p) => p.role === user.orgType)
-    if (slot) {
-      slot.name = user.orgName
-      slot.contact = user.name
-    }
-  }
-  const orgRows = await env.DB.prepare('SELECT id, name FROM organizations').all<{ id: number; name: string }>()
-  const orgByName = new Map(orgRows.results.map((o) => [o.name, o.id]))
-
-  const stmts: D1PreparedStatement[] = []
-  stmts.push(
-    env.DB.prepare(
-      `INSERT INTO shipments (id, booking_ref, origin_code, destination_code, via_code, lane_id, carrier_name, carrier_scac, vessel_name, vessel_imo, vessel_voyage, status, etd, eta, atd, incoterm, commodity, co2_tons, freight_cost_usd, on_time, progress, delay_reason, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'booking_confirmed', ?, ?, NULL, ?, ?, ?, ?, 1, 0, NULL, ?, ?)`,
-    ).bind(
-      id,
-      bookingRef,
-      origin.code,
-      destination.code,
-      lane.via ?? null,
-      lane.id,
-      sched.carrier,
-      sched.scac,
-      sched.vesselName,
-      `9${500000 + refNum}`,
-      sched.voyage,
-      sched.etd,
-      sched.eta,
-      payload.incoterm,
-      payload.commodity,
-      Math.round(totalTeu * sched.co2PerTeuTons * 10) / 10,
-      totalTeu * sched.costPerTeuUsd,
-      user.id,
-      now,
-    ),
-  )
-
-  let pos = 0
-  for (const [type, count] of Object.entries(payload.containers)) {
-    for (let i = 0; i < (count ?? 0); i++) {
-      stmts.push(
-        env.DB.prepare(
-          'INSERT INTO containers (shipment_id, position, number, type, seal_number, weight_kg, status, dd_risk_usd) VALUES (?, ?, ?, ?, ?, ?, ?, 0)',
-        ).bind(id, pos, `TLNU${7000000 + refNum * 137 + pos}`, type, `SL${400000 + refNum * 61 + pos}`, payload.weightKg, 'FCL'),
-      )
-      pos++
-    }
-  }
-
-  milestonesPlan.forEach((m, i) => {
+  const buildStatements = (id: string, bookingRef: string, refNum: number, now: string): D1PreparedStatement[] => {
+    const stmts: D1PreparedStatement[] = []
     stmts.push(
       env.DB.prepare(
-        'INSERT INTO milestones (shipment_id, position, key, label, location, planned, actual, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      ).bind(id, i, m.key, m.label, m.location, addDays(sched.etd, m.offset), i === 0 ? now : null, i === 0 ? 'completed' : i === 1 ? 'current' : 'pending'),
-    )
-  })
-
-  for (const doc of [
-    { docId: `${id}-si`, type: 'SI', name: 'Shipping Instructions' },
-    { docId: `${id}-vgm`, type: 'VGM', name: 'VGM Declaration' },
-  ]) {
-    stmts.push(
-      env.DB.prepare("INSERT INTO documents (id, shipment_id, type, name, status, uploaded_by, updated_at) VALUES (?, ?, ?, ?, 'draft', ?, ?)").bind(
-        doc.docId,
+        `INSERT INTO shipments (id, booking_ref, origin_code, destination_code, via_code, lane_id, carrier_name, carrier_scac, vessel_name, vessel_imo, vessel_voyage, status, etd, eta, atd, incoterm, commodity, co2_tons, freight_cost_usd, on_time, progress, delay_reason, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'booking_confirmed', ?, ?, NULL, ?, ?, ?, ?, 1, 0, NULL, ?, ?)`,
+      ).bind(
         id,
-        doc.type,
-        doc.name,
-        user.name,
+        bookingRef,
+        origin.code,
+        destination.code,
+        lane.via ?? null,
+        lane.id,
+        sched.carrier,
+        sched.scac,
+        sched.vesselName,
+        `9${500000 + refNum}`,
+        sched.voyage,
+        sched.etd,
+        sched.eta,
+        booking.incoterm,
+        booking.commodity,
+        Math.round(booking.totalTeu * sched.co2PerTeuTons * 10) / 10,
+        booking.totalTeu * sched.costPerTeuUsd,
+        user.id,
         now,
       ),
     )
-  }
 
-  parties.forEach((p, i) => {
+    let pos = 0
+    for (const { type, count } of booking.containers) {
+      for (let i = 0; i < count; i++) {
+        stmts.push(
+          env.DB.prepare(
+            'INSERT INTO containers (shipment_id, position, number, type, seal_number, weight_kg, status, dd_risk_usd) VALUES (?, ?, ?, ?, ?, ?, ?, 0)',
+          ).bind(id, pos, `TLNU${7000000 + refNum * 137 + pos}`, type, `SL${400000 + refNum * 61 + pos}`, booking.weightKg, 'FCL'),
+        )
+        pos++
+      }
+    }
+
+    milestonesPlan.forEach((m, i) => {
+      stmts.push(
+        env.DB.prepare(
+          'INSERT INTO milestones (shipment_id, position, key, label, location, planned, actual, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        ).bind(id, i, m.key, m.label, m.location, addDays(sched.etd, m.offset), i === 0 ? now : null, i === 0 ? 'completed' : i === 1 ? 'current' : 'pending'),
+      )
+    })
+
+    for (const doc of [
+      { docId: `${id}-si`, type: 'SI', name: 'Shipping Instructions' },
+      { docId: `${id}-vgm`, type: 'VGM', name: 'VGM Declaration' },
+    ]) {
+      stmts.push(
+        env.DB.prepare("INSERT INTO documents (id, shipment_id, type, name, status, uploaded_by, updated_at) VALUES (?, ?, ?, ?, 'draft', ?, ?)").bind(
+          doc.docId,
+          id,
+          doc.type,
+          doc.name,
+          user.name,
+          now,
+        ),
+      )
+    }
+
+    parties.forEach((p, i) => {
+      stmts.push(
+        env.DB.prepare('INSERT INTO shipment_parties (id, shipment_id, org_id, name, role, contact) VALUES (?, ?, ?, ?, ?, ?)').bind(
+          `${id}-p${i}`,
+          id,
+          p.orgId,
+          p.name,
+          p.role,
+          p.contact,
+        ),
+      )
+    })
+
     stmts.push(
-      env.DB.prepare('INSERT INTO shipment_parties (id, shipment_id, org_id, name, role, contact) VALUES (?, ?, ?, ?, ?, ?)').bind(
-        `${id}-p${i}`,
+      env.DB.prepare('INSERT INTO comments (id, shipment_id, author, role, text, at) VALUES (?, ?, ?, ?, ?, ?)').bind(
+        `${id}-c0`,
         id,
-        orgByName.get(p.name) ?? null,
-        p.name,
-        p.role,
-        p.contact,
+        'Operations desk',
+        'carrier',
+        'Booking confirmed on requested sailing. Cut-off is 48h before ETD.',
+        now,
       ),
     )
-  })
+    return stmts
+  }
 
-  stmts.push(
-    env.DB.prepare('INSERT INTO comments (id, shipment_id, author, role, text, at) VALUES (?, ?, ?, ?, ?, ?)').bind(
-      `${id}-c0`,
-      id,
-      'Operations desk',
-      'carrier',
-      'Booking confirmed on requested sailing. Cut-off is 48h before ETD.',
-      now,
-    ),
-  )
-
-  await env.DB.batch(stmts)
-  return getShipment(env, user, id)
+  for (let attempt = 1; attempt <= REF_ATTEMPTS; attempt++) {
+    const refNum = await nextRefNum(env)
+    const bookingRef = `TL-2026-${String(refNum).padStart(4, '0')}`
+    const id = `b-${refNum}`
+    try {
+      await env.DB.batch(buildStatements(id, bookingRef, refNum, new Date().toISOString()))
+      return getShipment(env, user, id)
+    } catch (err) {
+      // Someone else took this reference between the read and the write: take the next one.
+      if (isUniqueConflict(err) && attempt < REF_ATTEMPTS) continue
+      throw err
+    }
+  }
+  throw new HttpError(409, 'Could not allocate a booking reference — too many concurrent bookings. Please retry.')
 }
+
 
 export async function approveDocument(env: Env, user: SessionUser, shipmentId: string, docId: string): Promise<Response> {
   await fetchVisible(env, user, shipmentId)
