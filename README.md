@@ -103,9 +103,27 @@ npm run dev:worker           # wrangler dev → http://localhost:8787 (API + bui
 npm run dev                  # optional: Vite with HMR on :5173, proxying /api → :8787
 npm run build                # type-check (app + worker + scripts) and bundle
 npm run test:unit            # pure functions (ISO 6346 check digits)
+npm run db:export            # back up the local database to backups/
 ```
 
 `npm run db:reset:local` wipes local state and re-seeds.
+
+### Backup and restore
+
+There was no backup routine until now; `npm run db:export` (add `:remote` for the deployed database) writes a self-contained `.sql` file to `backups/` (gitignored) containing the schema, every index, and every row, including `d1_migrations` so wrangler still knows which migrations are applied.
+
+**Run it before any bulk data load and before any migration.**
+
+Restore into a **new** database and inspect it before pointing `wrangler.jsonc` at it; never restore over a live database you have not exported first:
+
+```bash
+npx wrangler d1 create tidelane-restore
+npx wrangler d1 execute tidelane-restore --remote --file=backups/<file>.sql
+```
+
+The round trip is verified, not assumed: the local database was wiped entirely, restored from a dump, and came back with all 14 tables and 1026 rows matching, the `0006` NOT NULL constraint intact, `wrangler d1 migrations apply` reporting nothing left to apply, and the full e2e suite passing against the restored data.
+
+A remote export contains every user row and every shipment. Treat the file as production data and keep it off the machine that produced it.
 
 ### Data invariants
 

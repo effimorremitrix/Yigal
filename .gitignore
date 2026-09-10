@@ -5,3 +5,4 @@ test-results
 *.local
 .DS_Store
 .dev.vars
+backups
