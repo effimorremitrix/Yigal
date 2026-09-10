@@ -20,7 +20,12 @@
     "db:check": "tsx scripts/check-invariants.ts",
     "db:check:remote": "tsx scripts/check-invariants.ts --remote",
     "db:export": "tsx scripts/db-export.ts",
-    "db:export:remote": "tsx scripts/db-export.ts --remote"
+    "db:export:remote": "tsx scripts/db-export.ts --remote",
+    "demo:capture": "playwright test -c playwright.demo.config.ts",
+    "demo:spot": "node scripts/demo/spot-check.mjs demo/scene.html demo/out/spots",
+    "demo:render": "node scripts/demo/render.mjs demo/scene.html demo/out/tidelane-email-to-booking.mp4 195 30",
+    "demo:video": "npm run demo:capture && npm run demo:render",
+    "demo:narration": "node scripts/demo/narration.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",

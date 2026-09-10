@@ -1,0 +1,75 @@
+1
+00:00:00,000 --> 00:00:08,000
+From the email to the booking. Two tools, two jobs.
+
+2
+00:00:08,000 --> 00:00:15,000
+Part one. What Deckhand does. It takes the identifiers out of the email. Nothing else.
+
+3
+00:00:15,000 --> 00:00:32,000
+This is the job. Two container numbers, two seal numbers, and they have to reach INTTRA without a typo.
+
+4
+00:00:32,000 --> 00:00:42,000
+Deckhand is in the sidebar, under Invoices. Nothing is saved here: it reads the document and forgets it.
+
+5
+00:00:42,000 --> 00:00:52,000
+Select the whole email and paste it. Headers, signature, all of it. Then press Extract.
+
+6
+00:00:52,000 --> 00:01:04,000
+Four cards come back. The paste-ready block is the one you copy from.
+
+7
+00:01:04,000 --> 00:01:20,000
+Read the block against the email before it goes anywhere. That check is the point, not a formality.
+
+8
+00:01:20,000 --> 00:01:33,000
+Paired only where the document showed them together. The note in brackets tells you what the evidence was.
+
+9
+00:01:33,000 --> 00:01:47,000
+Two lists side by side is not evidence. Deckhand will not guess which seal belongs to which container, and neither should you.
+
+10
+00:01:47,000 --> 00:02:00,000
+Container numbers carry a check digit. A failure is flagged in red, never corrected quietly. Retype it from the source.
+
+11
+00:02:00,000 --> 00:02:14,000
+Copy all, then paste into INTTRA. In your own browser, in the session you already opened. Deckhand never logs in for you and never sees your password.
+
+12
+00:02:14,000 --> 00:02:22,000
+Part two. What Tidelane does. It keeps the record. It does not read your email.
+
+13
+00:02:22,000 --> 00:02:29,000
+Step one, route. Where the cargo is going, and on what terms.
+
+14
+00:02:29,000 --> 00:02:36,000
+Step two, cargo. Container types and counts.
+
+15
+00:02:36,000 --> 00:02:44,000
+Step three, sailing. These come from the INTTRA connector, running in mock mode.
+
+16
+00:02:44,000 --> 00:02:51,000
+Step four, review. Read the small print before you confirm.
+
+17
+00:02:51,000 --> 00:02:58,000
+Booking confirmed. This writes to Tidelane only. No booking is sent to a carrier.
+
+18
+00:02:58,000 --> 00:03:06,000
+These are Tidelane's own container and seal numbers, not the ones from the email.
+
+19
+00:03:06,000 --> 00:03:15,000
+Two separate jobs. Deckhand's output goes to INTTRA. Tidelane keeps its own record. When Deckhand gets something wrong: trust the email, not the block.
