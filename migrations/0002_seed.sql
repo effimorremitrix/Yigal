@@ -21,9 +21,9 @@ INSERT INTO organizations (id, name, type) VALUES
   (18, 'HarborLink', 'carrier');
 
 INSERT INTO users (id, email, name, title, role, org_id, password_hash, active, created_at) VALUES
-  (1, 'effi@tidelane.demo', 'Effi Mor', 'Logistics Manager', 'admin', 1, 'pbkdf2$100000$0/FkkO8M5WkZaU2TwBN85g==$lFdx5HXZjwwy7XwjRViUIfOIAA51Bg34+LH9fON+lv0=', 1, '2026-08-31T09:00:00.000Z'),
-  (2, 'ops@tidelane.demo', 'Noa Adler', 'Operations Specialist', 'ops', 1, 'pbkdf2$100000$0LGEIvIpRO3Njp02m0nfLw==$wKZ13xRVqL+vSjvetOC1RNq6d4PXN5qbApI7eEBF1ZU=', 1, '2026-08-31T09:00:00.000Z'),
-  (3, 'viewer@tidelane.demo', 'Guy Peled', 'Supply Chain Analyst', 'viewer', 1, 'pbkdf2$100000$t+0URfzM6TdUStieltcIwg==$8RNDRlgAHIBCTnXPuIv3MEIWxrss9CUuLGl9yHJnsd4=', 1, '2026-08-31T09:00:00.000Z'),
+  (1, 'yigal.tzfira@galco-intl.com', 'Yigal Tzfira', 'Managing Director', 'admin', 1, 'pbkdf2$100000$I/e28IVJg5Npkbovh9LISA==$j9piRMDgJja9kC8EQzyyHaoR6kU9PJzS4q9f3bZ8Lqs=', 1, '2026-08-31T09:00:00.000Z'),
+  (2, 'effi.mor@galco-intl.com', 'Effi Mor', 'Operations Specialist', 'ops', 1, 'pbkdf2$100000$kFsOewC9jAU3uYOzaYTNuQ==$c2fJOohhIFXldx/4+WKU9H2CrL7kIc5oRd6C+mCOMwg=', 1, '2026-08-31T09:00:00.000Z'),
+  (3, 'ben.mor@galco-intl.com', 'Ben Mor', 'Supply Chain Analyst', 'viewer', 1, 'pbkdf2$100000$UTGvpyAcVsiP8BIXddKrQg==$2ZsJSKJ5t5p6aIb/Du50SY/Hoas0R97GBEabQzAYKWs=', 1, '2026-08-31T09:00:00.000Z'),
   (4, 'dana@atlaspolymers.demo', 'Dana Weiss', 'Export Manager', 'ops', 2, 'pbkdf2$100000$a3OdGo/Z1jZqzlc7tsB3nQ==$pEFPPzh8wEhRX53jYIxuSqKilPxwotMSuy1qEBKfPQA=', 1, '2026-08-31T09:00:00.000Z'),
   (5, 'amit@globalfreight.demo', 'Amit Shalev', 'Freight Coordinator', 'ops', 11, 'pbkdf2$100000$HGh4pqICZmSiiQ0A4MS9jA==$Mp4vWLV3adI0/YzEH02B6s5wSNljEiZtC2XuSfuJJc8=', 1, '2026-08-31T09:00:00.000Z'),
   (6, 'pieter@northline.demo', 'Pieter van Dam', 'Import Planner', 'viewer', 10, 'pbkdf2$100000$Ew1aEmtJDzJoXYRMUBxonw==$VOROsbeC4Lw527m4q/38TXliuFm4/k+VteY1Q/UPkEM=', 1, '2026-08-31T09:00:00.000Z'),

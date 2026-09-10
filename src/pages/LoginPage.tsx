@@ -5,16 +5,16 @@ import { useAuth } from '../context/AuthContext'
 import { ApiError } from '../lib/api'
 
 const DEMO_ACCOUNTS = [
-  { email: 'effi@tidelane.demo', label: 'Admin · Tidelane' },
-  { email: 'ops@tidelane.demo', label: 'Operations · Tidelane' },
-  { email: 'viewer@tidelane.demo', label: 'Viewer · Tidelane' },
+  { email: 'yigal.tzfira@galco-intl.com', label: 'Admin · Tidelane' },
+  { email: 'effi.mor@galco-intl.com', label: 'Operations · Tidelane' },
+  { email: 'ben.mor@galco-intl.com', label: 'Viewer · Tidelane' },
   { email: 'dana@atlaspolymers.demo', label: 'Shipper · Atlas Polymers' },
 ]
 
 export default function LoginPage() {
   const { status, login, landingPage } = useAuth()
   const navigate = useNavigate()
-  const [email, setEmail] = useState('effi@tidelane.demo')
+  const [email, setEmail] = useState('yigal.tzfira@galco-intl.com')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)

@@ -17,7 +17,7 @@ Hebrew workflow guide (business + development): [`docs/workflow-guide.he.md`](do
 - **Deckhand** (`/deckhand`) — paste an email or attach a PDF/photo and get a checked, paste-ready block of the identifiers: booking ref, container numbers with their ISO 6346 check digit verified, seal numbers aligned to the container they were shown beside, vessel/voyage, ports, and an explicit list of anything it would not commit to. Stateless: it reads nothing from the database and writes nothing anywhere. Internal admin/ops only.
 - **Analytics** — TEU volume, carrier allocation, on-time vs target, CO₂ by lane
 - **Settings** — profile, preferences (timezone, date format, landing page, notifications); admin tabs for user management and **Integrations** (CBP ACE customs, E2open INTTRA, Intuit QuickBooks: enable/disable, mock/live, editable API credentials, connection test, QuickBooks sign-in)
-- **User Guide** (`/guide`) — demo accounts, permission matrix, module walkthrough; readable before login
+- **User Guide** (`/guide`) — how the work flows end to end, accounts, permission matrix, module walkthrough, shipment and document lifecycles, integration status and a common-scenarios playbook; the English counterpart of `docs/workflow-guide.he.md`, readable before login
 
 ## Users, roles & organizations
 
@@ -26,13 +26,15 @@ Two-axis access control, enforced by the API:
 - **Role tiers**: `admin` (everything + user management) · `ops` (book, approve, comment) · `viewer` (read-only)
 - **Organization scoping**: users belong to an organization (`internal`, `shipper`, `forwarder`, `consignee`, `carrier`). Internal users see all shipments; partner users only see shipments where their org is a party.
 
-### Demo accounts (password for all: `tidelane-demo`)
+### Accounts (shared demo password for all: `tidelane-demo`)
+
+The three internal accounts carry Yigal's real addresses; the four partner accounts are fictional demo companies. The shared password must go before any real shipment data is loaded.
 
 | Email | Role | Organization |
 |---|---|---|
-| effi@tidelane.demo | admin | Tidelane (internal) |
-| ops@tidelane.demo | ops | Tidelane (internal) |
-| viewer@tidelane.demo | viewer | Tidelane (internal) |
+| yigal.tzfira@galco-intl.com | admin | Tidelane (internal) |
+| effi.mor@galco-intl.com | ops | Tidelane (internal) |
+| ben.mor@galco-intl.com | viewer | Tidelane (internal) |
 | dana@atlaspolymers.demo | ops | Atlas Polymers (shipper) |
 | amit@globalfreight.demo | ops | GlobalFreight Partners (forwarder) |
 | pieter@northline.demo | viewer | Northline Imports (consignee) |

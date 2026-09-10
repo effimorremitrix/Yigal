@@ -108,7 +108,7 @@ SI, eVGM and draft B/L need new adapter methods and a document exchange model. O
 
 1. `npm run build` type-checks app, worker and scripts.
 2. `npm run db:reset:local && npm run dev:worker`.
-3. Sign in as `effi@tidelane.demo`, Settings, Integrations, INTTRA: save base URL and credentials,
+3. Sign in as `yigal.tzfira@galco-intl.com`, Settings, Integrations, INTTRA: save base URL and credentials,
    switch to Live, press Test connection. Expect `OK · live` with a latency figure, and a clear auth
    error rather than a 500 on a bad key.
 4. Booking wizard step 3: sailings load and `ScheduleResult.source` reads `live`.
