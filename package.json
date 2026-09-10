@@ -13,9 +13,11 @@
     "db:migrate:remote": "wrangler d1 migrations apply tidelane --remote",
     "db:reset:local": "rm -rf .wrangler/state && wrangler d1 migrations apply tidelane --local",
     "test:e2e": "playwright test",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "test:unit": "node --import tsx --test \"worker/**/*.test.ts\""
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.124.0",
     "lucide-react": "^0.474.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

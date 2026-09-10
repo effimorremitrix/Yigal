@@ -10,6 +10,7 @@ import {
   startQuickBooksOAuth,
   testIntegration,
 } from './integrations/api'
+import { extractIdentifiers } from './deckhand/api'
 import { listInvoices, syncInvoices } from './invoices'
 import { Router, type RequestContext } from './router'
 import { addComment, approveDocument, createShipment, getShipment, listShipments } from './shipments'
@@ -109,6 +110,13 @@ router.add('POST', '/api/integrations/quickbooks/oauth/start', async ({ request,
 router.add('GET', '/api/integrations/quickbooks/oauth/callback', async ({ request, env, user }) => quickBooksOAuthCallback(env, user, request))
 router.add('POST', '/api/integrations/quickbooks/invoices/sync', async ({ env, user }) => syncInvoices(env, requireInternal(user, ['admin', 'ops'])))
 router.add('GET', '/api/invoices', async ({ env, user }) => listInvoices(env, requireInternal(user, ['admin', 'ops'])))
+
+// Deckhand: stateless extraction of shipping identifiers out of a pasted email or an
+// uploaded document. Reads nothing from D1 and writes nothing anywhere; the output is read
+// by a human and copied by hand. Internal ops only, like the other non-partner surfaces.
+router.add('POST', '/api/deckhand/extract', async ({ request, env, user }) =>
+  extractIdentifiers(env, requireInternal(user, ['admin', 'ops']), request),
+)
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {

@@ -10,6 +10,7 @@ import {
   Receipt,
   Settings,
   Ship,
+  Wand2,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 
@@ -21,6 +22,7 @@ const NAV = [
   { to: '/tracking', label: 'Track & Trace', icon: Map },
   { to: '/documents', label: 'Documents', icon: FileText },
   { to: '/invoices', label: 'Invoices', icon: Receipt, internalWrite: true },
+  { to: '/deckhand', label: 'Deckhand', icon: Wand2, internalWrite: true },
   { to: '/analytics', label: 'Analytics', icon: BarChart3 },
   { to: '/settings', label: 'Settings', icon: Settings },
   { to: '/guide', label: 'User Guide', icon: BookOpen },

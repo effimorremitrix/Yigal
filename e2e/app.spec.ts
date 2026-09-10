@@ -399,6 +399,93 @@ test('shipment map marks every port of call and expands one with its ETA', async
   await expect(page.getByTestId('port-call-widget')).toHaveCount(0)
 })
 
+// A table that shows each container beside its own seal: the only shape that proves a pairing.
+const ALIGNED_EMAIL = [
+  'Booking Ref: SHPX-99120',
+  'Vessel: Meridian Aurora   Voyage: 12E',
+  'Port of loading: Shanghai',
+  'Port of discharge: Rotterdam',
+  '',
+  'Container      | Seal',
+  'CSQU3054383    | Seal No: SL-44821',
+  'TGHU7654320    | Seal No: SL-44822',
+].join('\n')
+
+// The same identifiers, but as two unrelated lists. Nothing ties a seal to a container.
+const UNALIGNED_EMAIL = [
+  'Booking Ref: SHPX-99121',
+  'Containers: CSQU3054383, TGHU7654320',
+  'Seals: SL-44821, SL-44822',
+].join('\n')
+
+async function deckhandExtract(page: Page, text: string) {
+  await page.goto('/deckhand')
+  await page.getByTestId('deckhand-text').fill(text)
+  await page.getByTestId('deckhand-extract').click()
+  await expect(page.getByTestId('deckhand-block')).toBeVisible()
+  return page.getByTestId('deckhand-block').innerText()
+}
+
+test('deckhand pairs a container with the seal shown beside it', async ({ page }) => {
+  await login(page, 'ops@tidelane.demo')
+  const block = await deckhandExtract(page, ALIGNED_EMAIL)
+
+  expect(block).toContain('SHPX-99120')
+  expect(block).toContain('CSQU3054383')
+  expect(block).toContain('SL-44821')
+  // The pairing must survive into the copyable block, on one line each.
+  expect(block).toMatch(/CSQU3054383\s+seal SL-44821/)
+  expect(block).toMatch(/TGHU7654320\s+seal SL-44822/)
+  await expect(page.getByTestId('deckhand-unpaired')).toHaveCount(0)
+})
+
+test('deckhand refuses to pair containers and seals listed separately', async ({ page }) => {
+  await login(page, 'ops@tidelane.demo')
+  const block = await deckhandExtract(page, UNALIGNED_EMAIL)
+
+  // This is the failure that matters: a seal on the wrong container. Nothing may be paired.
+  expect(block).not.toMatch(/CSQU3054383\s+seal SL-/)
+  expect(block).toContain('NOT PAIRED')
+  await expect(page.getByTestId('deckhand-unpaired')).toBeVisible()
+  await expect(page.getByText(/will not guess which seal belongs/i)).toBeVisible()
+})
+
+test('deckhand flags a failed ISO 6346 check digit instead of correcting it', async ({ page }) => {
+  await login(page, 'ops@tidelane.demo')
+  // TGHU7654320 is valid; changing the last digit must be reported, never silently repaired.
+  const block = await deckhandExtract(page, 'Container TGHU7654321 | Seal No: SL-1')
+  expect(block).toContain('TGHU7654321')
+  expect(block).toContain('CHECK DIGIT FAILS')
+  await expect(page.getByText('check digit fails', { exact: true })).toBeVisible()
+})
+
+test('deckhand prints missing fields rather than dropping them', async ({ page }) => {
+  await login(page, 'ops@tidelane.demo')
+  const block = await deckhandExtract(page, 'Container CSQU3054383 | Seal No: SL-9')
+  for (const label of ['Booking / shipment ref', 'Vessel / voyage', 'Ports (POL → POD)', 'Anything I am unsure of']) {
+    expect(block).toContain(label)
+  }
+  expect(block).toContain('(missing)')
+})
+
+test('deckhand is internal-only and writes nothing', async ({ page, request }) => {
+  await login(page, 'ops@tidelane.demo')
+  const before = await page.evaluate(`fetch('/api/shipments').then((r) => r.json()).then((s) => s.length)`)
+  await deckhandExtract(page, ALIGNED_EMAIL)
+  const after = await page.evaluate(`fetch('/api/shipments').then((r) => r.json()).then((s) => s.length)`)
+  expect(after).toBe(before) // v0 is stateless: an extraction creates nothing
+
+  await page.getByTestId('user-menu').click()
+  await page.getByRole('button', { name: 'Log out' }).click()
+  await login(page, 'dana@atlaspolymers.demo')
+  await expect(page.getByRole('link', { name: 'Deckhand' })).toHaveCount(0)
+  const denied = await page.evaluate(
+    `fetch('/api/deckhand/extract', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: 'x' }) }).then((r) => r.status)`,
+  )
+  expect(denied).toBe(403)
+  void request
+})
+
 test('user guide renders logged out with demo accounts', async ({ page }) => {
   await page.goto('/guide')
   await expect(page.getByText('What is Tidelane?')).toBeVisible()
