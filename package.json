@@ -18,7 +18,9 @@
     "deploy": "wrangler deploy",
     "test:unit": "node --import tsx --test \"worker/**/*.test.ts\"",
     "db:check": "tsx scripts/check-invariants.ts",
-    "db:check:remote": "tsx scripts/check-invariants.ts --remote"
+    "db:check:remote": "tsx scripts/check-invariants.ts --remote",
+    "db:export": "tsx scripts/db-export.ts",
+    "db:export:remote": "tsx scripts/db-export.ts --remote"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",
