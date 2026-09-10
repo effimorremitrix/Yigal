@@ -147,6 +147,8 @@ Covers: login/logout + bad password, viewer read-only gating, partner org scopin
 
 The repo is connected to **Cloudflare Workers Builds**: every push deploys automatically. `wrangler.jsonc` declares `build.command = "npm run build"`, so wrangler builds the SPA itself before deploying — CI needs no extra build configuration, and `npm run deploy` works the same locally.
 
+There is exactly one address: https://yigal.effi-mor-e04.workers.dev/. `wrangler.jsonc` sets `preview_urls: false`, so a build on a non-production branch no longer mints a public per-commit or per-branch `*.workers.dev` URL. Those previews bound to the same production D1 as the live site, and `/guide` is readable before login, so each one was another public door onto the same data. Review a branch locally with `npm run dev:worker` instead. Leave this off once real shipment data is loaded.
+
 **One-time setup** (already done for this deployment): create the D1 database and seed it —
 
 ```bash

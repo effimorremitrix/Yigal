@@ -126,6 +126,7 @@ Seven three-hour sessions, 07:00 to 10:00, 24 to 30 September, at Yigal's apartm
 - [ ] `CREDENTIALS_KEY` generated properly, stored off Effi's laptop, known to a second person
 - [ ] Transfer the Cloudflare account, worker, D1 database and Intuit developer app to Yigal
 - [ ] Build a database export routine; there is no backup today
+- [x] Disable Cloudflare preview URLs (`preview_urls: false` in `wrangler.jsonc`), so a branch build no longer publishes a second public address onto the production database
 - [ ] Move off the `workers.dev` subdomain to a domain Yigal owns
 
 ## Explicitly out of scope

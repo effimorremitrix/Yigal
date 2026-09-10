@@ -7,6 +7,12 @@
   "compatibility_date": "2026-08-31",
   // Runs before deploy/dev so CI (Workers Builds) and `wrangler deploy` always have a fresh dist/.
   "build": { "command": "npm run build" },
+  // No public preview URLs. Workers Builds otherwise mints a per-commit and a per-branch
+  // *.workers.dev address for every non-production build, and each one binds to the SAME
+  // production D1 below. With /guide readable before login, that turns every branch into
+  // another public door onto real shipment data. Pre-merge review happens locally instead
+  // (`npm run dev:worker`). Do not flip this to true once real data is loaded.
+  "preview_urls": false,
   // Non-secret integration fallbacks. An admin sets the live values in Settings > Integrations; these apply
   // only until then. Secrets (CREDENTIALS_KEY, ACE_API_KEY, INTTRA_CLIENT_ID, INTTRA_API_KEY, QUICKBOOKS_CLIENT_ID,
   // QUICKBOOKS_CLIENT_SECRET, QUICKBOOKS_REALM_ID, QUICKBOOKS_REFRESH_TOKEN) are set with
