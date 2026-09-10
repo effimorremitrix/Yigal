@@ -8,15 +8,23 @@
  * Exits non-zero on the first violation so it can gate a data load.
  */
 import { execFileSync } from 'node:child_process'
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
 
 const remote = process.argv.includes('--remote')
 const target = remote ? '--remote' : '--local'
 
-// On Windows the executable is npx.cmd; execFileSync without a shell will not find bare "npx".
-const NPX = process.platform === 'win32' ? 'npx.cmd' : 'npx'
+/**
+ * Run wrangler's JavaScript entry point under this same node binary, rather than shelling out
+ * to `npx`. On Windows the npx shim is npx.cmd, and since the 2024 security fix node refuses to
+ * spawn .cmd or .bat without a shell (EINVAL) — and putting SQL through cmd quoting to satisfy
+ * that is worse than not needing a shell at all. process.execPath is a real executable on every
+ * platform, so this path has no shell in it anywhere.
+ */
+const WRANGLER = join(dirname(createRequire(import.meta.url).resolve('wrangler/package.json')), 'bin', 'wrangler.js')
 
 function query<T>(sql: string): T[] {
-  const out = execFileSync(NPX, ['wrangler', 'd1', 'execute', 'tidelane', target, '--command', sql, '--json'], {
+  const out = execFileSync(process.execPath, [WRANGLER, 'd1', 'execute', 'tidelane', target, '--command', sql, '--json'], {
     encoding: 'utf-8',
     stdio: ['ignore', 'pipe', 'pipe'],
   })
