@@ -16,10 +16,12 @@
     "db:audit:parties:remote": "wrangler d1 execute tidelane --remote --command \"SELECT sp.id, sp.shipment_id, sp.role, sp.name FROM shipment_parties sp WHERE sp.org_id IS NULL;\"",
     "test:e2e": "playwright test",
     "deploy": "wrangler deploy",
+    "test:unit": "node --import tsx --test \"worker/**/*.test.ts\"",
     "db:check": "tsx scripts/check-invariants.ts",
     "db:check:remote": "tsx scripts/check-invariants.ts --remote"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.124.0",
     "lucide-react": "^0.474.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

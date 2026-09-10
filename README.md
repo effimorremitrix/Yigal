@@ -14,6 +14,7 @@ Hebrew workflow guide (business + development): [`docs/workflow-guide.he.md`](do
 - **Track & Trace** — offline SVG world map with vessel positions along real trade-lane routes
 - **Documents** — cross-shipment registry with filters
 - **Invoices** — customer invoices pulled from QuickBooks Online into the database: open receivables, overdue, paid, each linked to the shipment it bills (internal admin/ops only)
+- **Deckhand** (`/deckhand`) — paste an email or attach a PDF/photo and get a checked, paste-ready block of the identifiers: booking ref, container numbers with their ISO 6346 check digit verified, seal numbers aligned to the container they were shown beside, vessel/voyage, ports, and an explicit list of anything it would not commit to. Stateless: it reads nothing from the database and writes nothing anywhere. Internal admin/ops only.
 - **Analytics** — TEU volume, carrier allocation, on-time vs target, CO₂ by lane
 - **Settings** — profile, preferences (timezone, date format, landing page, notifications); admin tabs for user management and **Integrations** (CBP ACE customs, E2open INTTRA, Intuit QuickBooks: enable/disable, mock/live, editable API credentials, connection test, QuickBooks sign-in)
 - **User Guide** (`/guide`) — demo accounts, permission matrix, module walkthrough; readable before login
@@ -67,6 +68,7 @@ npx wrangler secret put INTTRA_CLIENT_ID
 npx wrangler secret put INTTRA_API_KEY
 npx wrangler secret put QUICKBOOKS_CLIENT_ID
 npx wrangler secret put QUICKBOOKS_CLIENT_SECRET
+npx wrangler secret put ANTHROPIC_API_KEY   # Deckhand's extractor; without it Deckhand is text-only
 ```
 
 Generate the master key with `openssl rand -base64 32` and keep it: rotating it makes every stored credential unreadable, which degrades the affected provider to mock (the UI shows *Stored, unreadable*) until the keys are re-entered. Fallback base URLs stay under `vars` in `wrangler.jsonc` (`ACE_BASE_URL`, `INTTRA_BASE_URL`, `QUICKBOOKS_BASE_URL`). The ACE and INTTRA live payload mappers throw an explicit "not implemented" error until the vendor specs are wired in, so keep those two in Mock mode until then. Which INTTRA modules we license, and what each one unblocks in the app, is scoped in [`docs/inttra-module-scope.md`](docs/inttra-module-scope.md).
@@ -80,6 +82,18 @@ QuickBooks Online has no API key; it only speaks OAuth 2.0, so a live connection
 
 Then switch Mode to **Live**, press **Test connection** (reports the connected company name) and pull invoices from the Invoices page. Access tokens live one hour and are cached per isolate; Intuit rotates the refresh token, and the worker writes the new one back encrypted under the acting user, which is why `CREDENTIALS_KEY` is required for anything beyond a local trial (an env-only refresh token cannot be updated and eventually fails with a "reconnect" message). Deleted invoices are not removed by a pull; voided ones show as `void`.
 
+### Deckhand
+
+`POST /api/deckhand/extract` takes `{ "text": "..." }` or a multipart `file` (PDF, JPEG or PNG, 5 MB cap) and returns the extraction plus the rendered block. It is gated to admin/ops of the internal organization and touches no D1 binding at all.
+
+Two extractors sit behind one interface, resolved the way the connectors resolve live vs mock: `worker/deckhand/llm.ts` when `ANTHROPIC_API_KEY` is set, otherwise the deterministic `worker/deckhand/stub.ts`, which is what e2e always exercises so the suite stays byte-stable. The stub handles text only; PDFs and photographs need the key.
+
+The one rule that governs the design: **a container and a seal are only ever paired when the document showed them together** — same table row, same line, or same labelled block. The evidence is part of the type, so a pairing cannot be constructed without stating why. Containers and seals that appear in unrelated lists are reported unpaired, with a warning, and are never zipped together by position. A seal on the wrong container is worse than no output at all.
+
+Container numbers are validated against ISO 6346 (`worker/deckhand/containers.ts`, unit-tested with `npm run test:unit`); a failed check digit is flagged loudly and never silently corrected. Seal numbers have no standard format and no check digit, so nothing about them is validated and the UI says so.
+
+`docs/deckhand-brief.md` is the brief. `docs/deckhand-v2-plan.md` is the parked v2 design; it is not in scope for the visit.
+
 ## Develop locally
 
 ```bash
@@ -88,6 +102,7 @@ npm run db:migrate:local     # create + seed the local D1 (in .wrangler/state)
 npm run dev:worker           # wrangler dev → http://localhost:8787 (API + built SPA)
 npm run dev                  # optional: Vite with HMR on :5173, proxying /api → :8787
 npm run build                # type-check (app + worker + scripts) and bundle
+npm run test:unit            # pure functions (ISO 6346 check digits)
 ```
 
 `npm run db:reset:local` wipes local state and re-seeds.

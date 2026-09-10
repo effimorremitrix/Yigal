@@ -13,6 +13,7 @@ import BookingPage from './pages/BookingPage'
 import TrackTracePage from './pages/TrackTracePage'
 import DocumentsPage from './pages/DocumentsPage'
 import InvoicesPage from './pages/InvoicesPage'
+import DeckhandPage from './pages/DeckhandPage'
 import AnalyticsPage from './pages/AnalyticsPage'
 import LoginPage from './pages/LoginPage'
 import SettingsPage from './pages/SettingsPage'
@@ -35,6 +36,7 @@ const router = createBrowserRouter([
           { path: 'tracking', element: <TrackTracePage /> },
           { path: 'documents', element: <DocumentsPage /> },
           { path: 'invoices', element: <InvoicesPage /> },
+          { path: 'deckhand', element: <DeckhandPage /> },
           { path: 'analytics', element: <AnalyticsPage /> },
           { path: 'settings', element: <SettingsPage /> },
         ],

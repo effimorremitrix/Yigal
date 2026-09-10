@@ -22,6 +22,11 @@ export interface Env {
   QUICKBOOKS_CLIENT_SECRET?: string
   QUICKBOOKS_REALM_ID?: string
   QUICKBOOKS_REFRESH_TOKEN?: string
+  // Deckhand's extraction service. `wrangler secret put ANTHROPIC_API_KEY`. Read only in
+  // worker/deckhand/extract.ts; without it Deckhand falls back to the deterministic
+  // text-only extractor. Deliberately not in integration_credentials: that would mean
+  // registering a provider and adding a migration, and Deckhand v0 needs neither.
+  ANTHROPIC_API_KEY?: string
 }
 
 export type Role = 'admin' | 'ops' | 'viewer'
