@@ -12,8 +12,11 @@ import { execFileSync } from 'node:child_process'
 const remote = process.argv.includes('--remote')
 const target = remote ? '--remote' : '--local'
 
+// On Windows the executable is npx.cmd; execFileSync without a shell will not find bare "npx".
+const NPX = process.platform === 'win32' ? 'npx.cmd' : 'npx'
+
 function query<T>(sql: string): T[] {
-  const out = execFileSync('npx', ['wrangler', 'd1', 'execute', 'tidelane', target, '--command', sql, '--json'], {
+  const out = execFileSync(NPX, ['wrangler', 'd1', 'execute', 'tidelane', target, '--command', sql, '--json'], {
     encoding: 'utf-8',
     stdio: ['ignore', 'pipe', 'pipe'],
   })
