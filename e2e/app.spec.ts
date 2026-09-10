@@ -369,6 +369,124 @@ test('ops user books a shipment that persists, with comment and approval', async
   await expect(approveButtons).toHaveCount(before - 1)
 })
 
+// A valid payload for POST /api/shipments, built in the browser so the session cookie rides along.
+const BOOKING_SCRIPT = `(async (n) => {
+  const day = 86400000
+  const payload = {
+    originCode: 'CNSHA',
+    destinationCode: 'NLRTM',
+    incoterm: 'FOB',
+    commodity: 'Auto parts',
+    weightKg: 12000,
+    containers: { '40HC': 2 },
+    schedule: {
+      carrier: 'Meridian Line',
+      scac: 'MERL',
+      vesselName: 'Meridian Aurora',
+      voyage: '12E',
+      etd: new Date(Date.now() + 7 * day).toISOString(),
+      eta: new Date(Date.now() + 41 * day).toISOString(),
+      transitDays: 34,
+      co2PerTeuTons: 1.2,
+      costPerTeuUsd: 1400,
+    },
+  }
+  const post = (body) =>
+    fetch('/api/shipments', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+      .then(async (r) => ({ status: r.status, body: await r.json() }))
+  return Promise.all(Array.from({ length: n }, () => post(payload)))
+})`
+
+test('concurrent bookings get distinct references and none fail', async ({ page }) => {
+  await login(page, 'ops@tidelane.demo')
+  // The wizard books one at a time, so the read-then-write race on TL-2026-#### only opens
+  // when several bookings land together — which is exactly what a bulk data load does.
+  const results = await page.evaluate(`${BOOKING_SCRIPT}(6)`) as { status: number; body: { bookingRef?: string; error?: string } }[]
+
+  expect(results.map((r) => r.status)).toEqual([200, 200, 200, 200, 200, 200])
+  const refs = results.map((r) => r.body.bookingRef)
+  expect(refs.every((r) => typeof r === 'string' && /^TL-2026-\d{4}$/.test(r))).toBe(true)
+  expect(new Set(refs).size).toBe(refs.length) // no reference handed out twice
+})
+
+test('the booking endpoint rejects invalid payloads at the boundary', async ({ page }) => {
+  await login(page, 'ops@tidelane.demo')
+  const reject = (patch: Record<string, unknown>) =>
+    page.evaluate(async (p) => {
+      const day = 86400000
+      const base = {
+        originCode: 'CNSHA',
+        destinationCode: 'NLRTM',
+        incoterm: 'FOB',
+        commodity: 'Auto parts',
+        weightKg: 12000,
+        containers: { '40HC': 2 },
+        schedule: {
+          carrier: 'Meridian Line',
+          scac: 'MERL',
+          vesselName: 'Meridian Aurora',
+          voyage: '12E',
+          etd: new Date(Date.now() + 7 * day).toISOString(),
+          eta: new Date(Date.now() + 41 * day).toISOString(),
+          transitDays: 34,
+          co2PerTeuTons: 1.2,
+          costPerTeuUsd: 1400,
+        },
+      }
+      const r = await fetch('/api/shipments', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ...base, ...p }),
+      })
+      return { status: r.status, error: ((await r.json()) as { error?: string }).error ?? '' }
+    }, patch)
+
+  expect((await reject({ incoterm: 'XXX' })).status).toBe(400)
+  expect((await reject({ commodity: '' })).status).toBe(400)
+  expect((await reject({ weightKg: -5 })).status).toBe(400)
+  expect((await reject({ containers: { NOPE: 1 } })).status).toBe(400)
+  expect((await reject({ containers: { '40HC': 999 } })).status).toBe(400)
+
+  const badDates = await reject({
+    schedule: {
+      carrier: 'Meridian Line',
+      scac: 'MERL',
+      vesselName: 'V',
+      voyage: '1',
+      etd: 'not-a-date',
+      eta: 'nope',
+      transitDays: 34,
+      co2PerTeuTons: 1,
+      costPerTeuUsd: 1,
+    },
+  })
+  expect(badDates.status).toBe(400)
+  expect(badDates.error).toMatch(/ETD|ETA/)
+
+  // The happy path still works after all that.
+  const ok = await reject({})
+  expect(ok.status).toBe(200)
+})
+
+test('every shipment party resolves to an organization', async ({ page }) => {
+  await login(page, 'effi@tidelane.demo')
+  // The symptom of an unresolved party is invisibility, so check it from the partner's side:
+  // a shipment Atlas Polymers is a party to must be reachable by an Atlas Polymers user.
+  const shipments = (await page.evaluate(`fetch('/api/shipments').then((r) => r.json())`)) as {
+    id: string
+    parties: { role: string; name: string }[]
+  }[]
+  const atlas = shipments.find((s) => s.parties.some((p) => p.name === 'Atlas Polymers Ltd'))
+  expect(atlas).toBeTruthy()
+
+  await page.getByTestId('user-menu').click()
+  await page.getByRole('button', { name: 'Log out' }).click()
+  await login(page, 'dana@atlaspolymers.demo')
+  await page.goto(`/shipments/${atlas!.id}`)
+  await expect(page.getByText('Shipment not found')).toHaveCount(0)
+  await expect(page.getByText('Journey')).toBeVisible()
+})
+
 test('user guide renders logged out with demo accounts', async ({ page }) => {
   await page.goto('/guide')
   await expect(page.getByText('What is Tidelane?')).toBeVisible()
