@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tidelane — from the email to the booking</title>
+<style>
+  /* No transitions anywhere: the renderer sets a time, screenshots, and moves on.
+     Anything animating on its own clock would make frames non-deterministic. */
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; transition: none !important; animation: none !important; }
+
+  :root {
+    --navy: #0c2038;
+    --navy-soft: #143253;
+    --brand: #2563eb;
+    --ink: #0f172a;
+    --paper: #eef2f7;
+    --line: rgba(255,255,255,.14);
+  }
+
+  html, body { width: 1440px; height: 900px; overflow: hidden; }
+  body {
+    background: var(--paper);
+    font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #stage { position: relative; width: 1440px; height: 900px; }
+
+  .scene { position: absolute; inset: 0; opacity: 0; }
+
+  /* ---- screenshot scenes -------------------------------------------------- */
+  .plate { position: absolute; inset: 0 0 132px 0; display: flex; align-items: center; justify-content: center; }
+  .plate img {
+    display: block;
+    border-radius: 10px;
+    box-shadow: 0 18px 44px rgba(12,32,56,.22), 0 2px 6px rgba(12,32,56,.10);
+    transform-origin: center center;
+  }
+  .plate.full img  { max-width: 1264px; max-height: 754px; }
+  .plate.crop img  { max-width: 1290px; max-height: 690px; border: 1px solid #dbe3ec; }
+
+  /* ---- caption bar -------------------------------------------------------- */
+  .bar {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 132px;
+    background: var(--navy); color: #fff;
+    padding: 20px 56px 0;
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  .bar .eyebrow {
+    font-size: 11px; letter-spacing: .16em; text-transform: uppercase;
+    color: #7ea6d8; margin-bottom: 7px;
+  }
+  .bar .line { font-size: 21px; line-height: 1.4; max-width: 1180px; }
+  #watermark {
+    position: absolute; top: 18px; right: 18px; z-index: 10;
+    padding: 5px 12px; border-radius: 999px;
+    background: rgba(12,32,56,.55); color: rgba(255,255,255,.78);
+    font-size: 11px; letter-spacing: .03em;
+  }
+
+  /* ---- title / part / closing cards --------------------------------------- */
+  .card { position: absolute; inset: 0; background: var(--navy); color: #fff;
+          display: flex; flex-direction: column; align-items: center; justify-content: center;
+          text-align: center; padding: 0 140px; }
+  .card .mark { display: flex; align-items: center; gap: 13px; margin-bottom: 34px; }
+  .card .mark .badge {
+    width: 46px; height: 46px; border-radius: 12px; background: var(--brand);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .card .mark .badge svg { width: 25px; height: 25px; }
+  .card .mark .wordmark { text-align: left; }
+  .card .mark .wordmark b { display: block; font-size: 19px; font-weight: 600; letter-spacing: .02em; }
+  .card .mark .wordmark span { display: block; font-size: 10px; letter-spacing: .22em; text-transform: uppercase; color: #7ea6d8; }
+  .card h1 { font-size: 46px; line-height: 1.16; font-weight: 600; letter-spacing: -.015em; max-width: 1000px; }
+  .card p  { margin-top: 22px; font-size: 20px; line-height: 1.55; color: #b9cde6; max-width: 880px; }
+  .card .rule { width: 62px; height: 3px; background: var(--brand); border-radius: 2px; margin: 30px 0 0; }
+
+  /* ---- the email scene ----------------------------------------------------- */
+  .mail {
+    position: absolute; left: 50%; top: 384px; transform: translate(-50%, -50%);
+    width: 1000px; background: #fff; border: 1px solid #dbe3ec; border-radius: 12px;
+    box-shadow: 0 18px 44px rgba(12,32,56,.16);
+    overflow: hidden;
+  }
+  .mail .head { padding: 18px 26px; border-bottom: 1px solid #eef1f6; background: #fbfcfe; }
+  .mail .subject { font-size: 17px; font-weight: 600; }
+  .mail .meta { margin-top: 5px; font-size: 12.5px; color: #64748b; }
+  .mail pre {
+    padding: 22px 26px 26px;
+    font: 13px/1.72 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: #1e293b; white-space: pre-wrap;
+  }
+  .mail mark { background: #fef3c7; color: #92400e; border-radius: 3px; padding: 1px 3px; font-weight: 600; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+
+<script>
+// ---------------------------------------------------------------------------
+// The timeline. Mirror of demo/narration.md — edit both together.
+// Windows are [start, end) in seconds. Total must equal DURATION.
+// ---------------------------------------------------------------------------
+const DURATION = 195
+
+const EMAIL_SUBJECT = 'Container & seal details - SHPX-99120'
+const EMAIL_META = 'Operations Desk &lt;bookings@meridianline.example&gt;  ·  to Yigal Tzfira'
+const EMAIL_BODY = `Dear Yigal,
+
+Please find below the container and seal details for the sailing referenced above.
+
+Booking Ref: <mark>SHPX-99120</mark>
+Vessel: Meridian Aurora   Voyage: 12E
+Port of loading: Shanghai
+Port of discharge: Rotterdam
+
+Container      | Seal
+<mark>CSQU3054383</mark>    | Seal No: <mark>SL-44821</mark>
+<mark>TGHU7654320</mark>    | Seal No: <mark>SL-44822</mark>
+
+Kindly confirm receipt and file the shipping instructions at your earliest convenience.
+
+Best regards,
+Operations Desk
+Meridian Line`
+
+const PART1 = 'Part one · what Deckhand does'
+const PART2 = 'Part two · what Tidelane does'
+
+const SCENES = [
+  { t: [0, 8], card: {
+      h: 'From the email to the booking',
+      p: 'Two tools, two jobs.',
+      mark: true } },
+
+  { t: [8, 15], card: {
+      h: 'Part one',
+      p: 'What Deckhand does. It takes the identifiers out of the email. Nothing else.' } },
+
+  { t: [15, 32], email: true, eyebrow: PART1,
+    line: 'This is the job. Two container numbers, two seal numbers, and they have to reach INTTRA without a typo.' },
+
+  { t: [32, 42], shot: '03-deckhand-empty.png', eyebrow: PART1,
+    line: 'Deckhand is in the sidebar, under Invoices. Nothing is saved here: it reads the document and forgets it.' },
+
+  { t: [42, 52], shot: '04-deckhand-pasted.png', eyebrow: PART1,
+    line: 'Select the whole email and paste it. Headers, signature, all of it. Then press Extract.' },
+
+  { t: [52, 64], shot: '05-deckhand-result.png', eyebrow: PART1,
+    line: 'Four cards come back. The paste-ready block is the one you copy from.' },
+
+  { t: [64, 80], crop: '06-block.png', eyebrow: PART1,
+    line: 'Read the block against the email before it goes anywhere. That check is the point, not a formality.' },
+
+  { t: [80, 93], crop: '07-pairs.png', eyebrow: PART1,
+    line: 'Paired only where the document showed them together. The note in brackets tells you what the evidence was.' },
+
+  { t: [93, 107], crop: '09b-unpaired.png', eyebrow: PART1,
+    line: 'Two lists side by side is not evidence. Deckhand will not guess which seal belongs to which container, and neither should you.' },
+
+  { t: [107, 120], crop: '10b-checkdigit.png', eyebrow: PART1,
+    line: 'Container numbers carry a check digit. A failure is flagged in red, never corrected quietly. Retype it from the source.' },
+
+  { t: [120, 134], card: {
+      h: 'Copy all, then paste into INTTRA',
+      p: 'In your own browser, in the session you already opened. Deckhand never logs in for you and never sees your password.' } },
+
+  { t: [134, 142], card: {
+      h: 'Part two',
+      p: 'What Tidelane does. It keeps the record. It does not read your email.' } },
+
+  { t: [142, 149], shot: '11-booking-route.png', eyebrow: PART2,
+    line: 'Step one, route. Where the cargo is going, and on what terms.' },
+
+  { t: [149, 156], shot: '12-booking-cargo.png', eyebrow: PART2,
+    line: 'Step two, cargo. Container types and counts.' },
+
+  { t: [156, 164], shot: '13-booking-schedule.png', eyebrow: PART2,
+    line: 'Step three, sailing. These come from the INTTRA connector, running in mock mode.' },
+
+  { t: [164, 171], shot: '14-booking-review.png', eyebrow: PART2,
+    line: 'Step four, review. Read the small print before you confirm.' },
+
+  { t: [171, 178], shot: '15-booking-confirmed.png', eyebrow: PART2,
+    line: 'Booking confirmed. This writes to Tidelane only. No booking is sent to a carrier.' },
+
+  { t: [178, 186], crop: '17-containers.png', eyebrow: PART2,
+    line: "These are Tidelane's own container and seal numbers, not the ones from the email." },
+
+  { t: [186, 195], card: {
+      h: 'Two separate jobs',
+      p: "Deckhand's output goes to INTTRA. Tidelane keeps its own record. When Deckhand gets something wrong: trust the email, not the block.",
+      mark: true } },
+]
+
+const DISCLAIMER = 'Demo data. Mock connectors. No live carrier connection.'
+
+const ANCHOR = `<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="5" r="3"/><line x1="12" y1="22" x2="12" y2="8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/></svg>`
+
+// --- timeline helpers ------------------------------------------------------
+const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x)
+/** Smoothstep 0→1 across [a,b]. */
+const seg = (t, a, b) => { const x = clamp01((t - a) / (b - a)); return x * x * (3 - 2 * x) }
+/** Fade in over [a,b], hold, fade out over [c,d]. */
+const io = (t, a, b, c, d) => Math.min(seg(t, a, b), 1 - seg(t, c, d))
+
+const FADE = 0.45
+
+// --- build the DOM once ----------------------------------------------------
+const stage = document.getElementById('stage')
+
+const watermark = document.createElement('div')
+watermark.id = 'watermark'
+watermark.textContent = DISCLAIMER
+
+
+for (const s of SCENES) {
+  const el = document.createElement('div')
+  el.className = 'scene'
+
+  if (s.card) {
+    el.innerHTML = `
+      <div class="card">
+        ${s.card.mark ? `<div class="mark"><span class="badge">${ANCHOR}</span>
+          <span class="wordmark"><b>Tidelane</b><span>Ocean freight OS</span></span></div>` : ''}
+        <h1>${s.card.h}</h1>
+        <p>${s.card.p}</p>
+        <div class="rule"></div>
+      </div>`
+  } else if (s.email) {
+    el.innerHTML = `
+      <div class="mail">
+        <div class="head">
+          <div class="subject">${EMAIL_SUBJECT}</div>
+          <div class="meta">${EMAIL_META}</div>
+        </div>
+        <pre>${EMAIL_BODY}</pre>
+      </div>
+      <div class="bar">
+        <div class="eyebrow">${s.eyebrow}</div>
+        <div class="line">${s.line}</div>
+      </div>`
+  } else {
+    const src = s.shot ?? s.crop
+    el.innerHTML = `
+      <div class="plate ${s.shot ? 'full' : 'crop'}"><img src="shots/${src}" alt=""></div>
+      <div class="bar">
+        <div class="eyebrow">${s.eyebrow}</div>
+        <div class="line">${s.line}</div>
+      </div>`
+  }
+
+  s.el = el
+  s.img = el.querySelector('.plate img')
+  stage.appendChild(el)
+}
+
+// --- the one function the renderer calls -----------------------------------
+window.seek = function seek(t) {
+  for (const s of SCENES) {
+    const [a, b] = s.t
+    // Cards butt up against each other, so fade the last frame of one into the first of
+    // the next rather than cutting to background.
+    const o = io(t, a - FADE, a + FADE, b - FADE, b + FADE)
+    s.el.style.opacity = o.toFixed(4)
+    if (o <= 0) continue
+    if (s.img) {
+      // A slow push in, so a held screenshot does not read as a frozen video.
+      const p = clamp01((t - a) / (b - a))
+      s.img.style.transform = `scale(${(1 + 0.018 * p).toFixed(5)})`
+    }
+  }
+}
+
+stage.appendChild(watermark)
+
+window.seek(0)
+window.__duration = DURATION
+// Exposed so scripts/demo/narration.mjs can generate the caption script from this one source.
+window.__scenes = SCENES.map(({ t, card, email, shot, crop, eyebrow, line }) => ({ t, card, email, shot, crop, eyebrow, line }))
+</script>
+</body>
+</html>
