@@ -140,7 +140,7 @@ const SCENARIOS = [
   { need: 'A document is stuck', path: 'Documents → filter pending_approval → approve from the shipment page' },
   { need: 'How much is open against a customer', path: 'Invoices → filter open and overdue' },
   { need: 'A partner says they cannot see a shipment', path: 'Settings → Users → confirm their organization is actually a party on that shipment' },
-  { need: 'An email arrived with containers and seals to retype', path: 'Deckhand → paste it → check the block against the email → copy field by field' },
+  { need: 'An email arrived with containers and seals to retype', path: 'Deckhand → paste it → check it against the email → copy the block, paste the table into the portal grid, or download the .csv' },
 ]
 
 const YesNo = ({ v }: { v: boolean }) =>
@@ -343,7 +343,14 @@ export default function GuidePage() {
                 <li>Paste the email body into the box, or attach the arrival notice, booking confirmation, B/L or container list as a PDF, JPEG or PNG (5 MB cap).</li>
                 <li>Press <strong className="font-semibold text-slate-700">Extract</strong>.</li>
                 <li>Read the paste-ready block against the source email. This step is the product, not an inconvenience.</li>
-                <li>Copy field by field, or copy the whole block, into INTTRA or wherever it has to go.</li>
+                <li>
+                  Pick an <strong className="font-semibold text-slate-700">Output</strong> shape:{' '}
+                  <strong className="font-semibold text-slate-700">Block</strong> to read and copy whole,{' '}
+                  <strong className="font-semibold text-slate-700">Table</strong> for a two-column paste straight into a
+                  portal grid, or <strong className="font-semibold text-slate-700">File</strong> for a .csv of the same
+                  two columns. Individual fields still have their own copy buttons.
+                </li>
+                <li>Paste or upload it into INTTRA or wherever it has to go.</li>
               </ol>
             </div>
             <div>
