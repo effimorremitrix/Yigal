@@ -199,13 +199,20 @@ function QuickBooksConnect({ config: c, busy, onBusy, onError }: { config: Integ
         <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-700" data-testid="integration-quickbooks-redirect">
           {redirectUri}
         </code>
-        . Run the sign-in from the worker origin (not the Vite dev server), since the worker derives the same value.
+        . Run the sign-in from the worker origin (not the Vite dev server), since the worker derives the same value. The app needs one
+        scope, Accounting (<span className="font-mono">com.intuit.quickbooks.accounting</span>); nothing else is ever requested.
+      </div>
+      <div className="text-[11px] text-slate-500">
+        The base URL selects the environment and must match the key set you copied:{' '}
+        <span className="font-mono">https://sandbox-quickbooks.api.intuit.com</span> with Development keys,{' '}
+        <span className="font-mono">https://quickbooks.api.intuit.com</span> with Production keys. Swapping one for the other means saving the new
+        client ID and secret and pressing Connect again, since the stored company id is only replaced by a completed sign-in. Full portal
+        walkthrough: <span className="font-mono">docs/intuit-app-registration.md</span>.
       </div>
       <div className="text-[11px] text-slate-500">
         No sign-in? Paste <span className="font-mono">QUICKBOOKS_REALM_ID</span> and <span className="font-mono">QUICKBOOKS_REFRESH_TOKEN</span> from Intuit's OAuth 2.0
-        Playground into the fields above instead. Base URL: <span className="font-mono">https://sandbox-quickbooks.api.intuit.com</span> (sandbox) or{' '}
-        <span className="font-mono">https://quickbooks.api.intuit.com</span> (production). Once connected, switch Mode to Live and press Test connection;
-        rotated refresh tokens are stored automatically.
+        Playground into the fields above instead. Once connected, switch Mode to Live and press Test connection; rotated refresh tokens are
+        stored automatically.
       </div>
     </div>
   )
