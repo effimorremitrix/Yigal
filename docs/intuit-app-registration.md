@@ -118,16 +118,24 @@ completes, so skipping it leaves production credentials pointing at a sandbox co
 ## Handing the app to Yigal
 
 The app is currently under Effi's Intuit account. `CLAUDE.md` lists transferring the Intuit developer
-app to Yigal as an open item, and Intuit has no self-service transfer between developer accounts.
-Two realistic routes, to be confirmed in the portal at the time:
+app to Yigal as a security item that must close before any real shipment data is loaded, and Intuit
+has no self-service transfer between developer accounts. These two things are not interchangeable:
 
-- **Invite Yigal to the developer account** as a member, so ownership of the app follows the account.
-- **Yigal creates his own production app** under his Intuit ID and we re-enter his client ID and
-  secret on the card and re-run Connect. Slower, but it leaves nothing of Tidelane's production
-  access attached to Effi.
+**The handover.** Yigal creates the production app under his own Intuit ID, and we enter his client
+ID and secret on the card and run Connect against his company. This is the route that closes the
+item, because afterwards nothing of Tidelane's production access is attached to Effi. Slower, and it
+is the one to plan for.
 
-Whichever route, the redirect URI to register is unchanged, and the connection must be re-made once:
-a new app means a new client ID, and refresh tokens are not portable between apps.
+**Shared access, which is not a handover.** Inviting Yigal to Effi's developer account gives him
+sight of the app and its keys while Effi remains the owner and keeps full control of it. Useful
+during the visit as a temporary convenience; it does **not** close the transfer item, and it must not
+be ticked as though it does.
+
+If Intuit has since added a supported ownership transfer, that is a third route and it would close
+the item. Check the portal before assuming it exists.
+
+Either way the redirect URI to register is unchanged, and the connection must be re-made once: a new
+app means a new client ID, and refresh tokens are not portable between apps.
 
 ## Troubleshooting
 
