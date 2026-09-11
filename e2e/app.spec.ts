@@ -529,6 +529,18 @@ const ALIGNED_EMAIL = [
   'TGHU7654320    | Seal No: SL-44822',
 ].join('\n')
 
+// Two proven pairings, plus a loose seal list that belongs to no container we can name.
+// The table output must carry the two pairings and must not invent a row for the loose seals.
+const MIXED_EMAIL = [
+  'Booking Ref: SHPX-99122',
+  '',
+  'Container      | Seal',
+  'CSQU3054383    | Seal No: SL-44821',
+  'TGHU7654320    | Seal No: SL-44822',
+  '',
+  'Spare seals: SL-99001, SL-99002',
+].join('\n')
+
 // The same identifiers, but as two unrelated lists. Nothing ties a seal to a container.
 const UNALIGNED_EMAIL = [
   'Booking Ref: SHPX-99121',
@@ -584,6 +596,30 @@ test('deckhand prints missing fields rather than dropping them', async ({ page }
     expect(block).toContain(label)
   }
   expect(block).toContain('(missing)')
+})
+
+test('deckhand table mode emits one row per pairing and no row for an unpaired seal', async ({ page }) => {
+  await login(page, 'effi.mor@galco-intl.com')
+  await deckhandExtract(page, MIXED_EMAIL)
+
+  // The control is a real radio group, so an arrow key moves between the modes.
+  await page.getByRole('radio', { name: 'Block' }).focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(page.getByRole('radio', { name: 'Table' })).toBeChecked()
+
+  const table = page.getByTestId('deckhand-output-table')
+  await expect(table).toBeVisible()
+  await expect(page.getByTestId('deckhand-output-row')).toHaveCount(2) // two pairings, two rows
+
+  const rendered = await table.innerText()
+  expect(rendered).toMatch(/CSQU3054383[\s\S]*SL-44821/)
+  expect(rendered).toMatch(/TGHU7654320[\s\S]*SL-44822/)
+  // The failure that matters: a seal with no container of its own must never get a row.
+  expect(rendered).not.toContain('SL-99001')
+  expect(rendered).not.toContain('SL-99002')
+
+  // And the screen says so above the table rather than leaving the gap to be discovered later.
+  await expect(page.getByTestId('deckhand-output-summary')).toContainText('2 unpaired seals left out of this output')
 })
 
 test('deckhand is internal-only and writes nothing', async ({ page, request }) => {
