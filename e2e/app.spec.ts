@@ -532,6 +532,154 @@ test('a partner never learns the other commercial counterparties on a shipment',
   expect(detail.parties.some((p) => p.role === 'consignee')).toBe(false)
 })
 
+// Yigal is paid a commission retained out of the producer's side of one all-in price, so the
+// three numbers on a shipment have to reconcile exactly: what the importer is invoiced, what
+// Yigal keeps, and what the producer receives. A shipment booked without an agreed price is a
+// legitimate case and must read as not set rather than as zero.
+test('trader economics reconcile, and the house rate moves the ones that have no rate of their own', async ({ page }) => {
+  interface S {
+    id: string
+    dealValueUsd?: number
+    commissionRatePct?: number
+    commissionUsd?: number
+    producerPayableUsd?: number
+  }
+  const load = async (): Promise<S[]> => (await page.evaluate(`fetch('/api/shipments').then((r) => r.json())`)) as S[]
+  const setRate = (pct: number) =>
+    page.evaluate(
+      `fetch('/api/business', {method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({commissionRatePct:${pct}})}).then((r) => r.status)`,
+    )
+
+  await login(page, 'yigal.tzfira@galco-intl.com')
+
+  const business = (await page.evaluate(`fetch('/api/business').then((r) => r.json())`)) as {
+    model: string
+    commissionRatePct: number
+  }
+  expect(business.model).toBe('trader')
+  expect(business.commissionRatePct).toBe(2)
+
+  const shipments = await load()
+  const priced = shipments.filter((s) => s.dealValueUsd !== undefined)
+  // The 42 seeded shipments all carry a value; a shipment booked earlier in this suite may not.
+  expect(priced.length).toBeGreaterThanOrEqual(42)
+  for (const s of priced) {
+    expect(s.dealValueUsd).toBeGreaterThan(0)
+    expect(s.commissionRatePct).toBe(2)
+    expect(s.commissionUsd).toBeCloseTo((s.dealValueUsd as number) * 0.02, 2)
+    // The payable and the commission add back to the deal value, to the cent.
+    expect((s.producerPayableUsd as number) + (s.commissionUsd as number)).toBeCloseTo(s.dealValueUsd as number, 2)
+    // The producer funds the fee, so the importer is never invoiced more than the headline price.
+    expect(s.producerPayableUsd).toBeLessThan(s.dealValueUsd as number)
+  }
+  // An unpriced shipment carries no derived numbers either, rather than a misleading zero.
+  for (const s of shipments.filter((x) => x.dealValueUsd === undefined)) {
+    expect(s.commissionUsd).toBeUndefined()
+    expect(s.producerPayableUsd).toBeUndefined()
+  }
+
+  // The house rate moves every shipment that has no rate of its own.
+  const probeId = priced[0].id
+  const probeValue = priced[0].dealValueUsd as number
+  expect(await setRate(3.5)).toBe(200)
+  const atNewRate = (await load()).find((s) => s.id === probeId) as S
+  expect(atNewRate.commissionRatePct).toBe(3.5)
+  expect(atNewRate.commissionUsd).toBeCloseTo(probeValue * 0.035, 2)
+  expect((atNewRate.producerPayableUsd as number) + (atNewRate.commissionUsd as number)).toBeCloseTo(probeValue, 2)
+
+  expect(await setRate(2)).toBe(200)
+  const restored = (await load()).find((s) => s.id === probeId) as S
+  expect(restored.commissionRatePct).toBe(2)
+
+  // A booking that records a price gets the economics; the rate is not asked for at booking time.
+  const created = (await page.evaluate(`
+    fetch('/api/shipments', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        originCode: 'CNSHA', destinationCode: 'NLRTM', incoterm: 'CIF', commodity: 'Auto parts',
+        weightKg: 18000, dealValueUsd: 200000, containers: { '40HC': 1 },
+        schedule: { carrier: 'Meridian Line', scac: 'MERL', vesselName: 'Meridian Vega', voyage: '7X',
+          etd: '2026-10-05T09:00:00.000Z', eta: '2026-11-08T09:00:00.000Z', transitDays: 34,
+          co2PerTeuTons: 1.2, costPerTeuUsd: 1400 },
+      }),
+    }).then((r) => r.json())
+  `)) as S
+  expect(created.dealValueUsd).toBe(200000)
+  expect(created.commissionUsd).toBeCloseTo(4000, 2)
+  expect(created.producerPayableUsd).toBeCloseTo(196000, 2)
+
+  // A negative price is refused at the boundary rather than stored.
+  const rejected = (await page.evaluate(`
+    fetch('/api/shipments', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        originCode: 'CNSHA', destinationCode: 'NLRTM', incoterm: 'CIF', commodity: 'Auto parts',
+        weightKg: 18000, dealValueUsd: -5, containers: { '40HC': 1 },
+        schedule: { carrier: 'Meridian Line', scac: 'MERL', vesselName: 'Meridian Vega', voyage: '7X',
+          etd: '2026-10-05T09:00:00.000Z', eta: '2026-11-08T09:00:00.000Z', transitDays: 34,
+          co2PerTeuTons: 1.2, costPerTeuUsd: 1400 },
+      }),
+    }).then((r) => r.status)
+  `)) as number
+  expect(rejected).toBe(400)
+})
+
+// The business model is not a preference: switching it to the freight operator model turns
+// counterparty isolation off. So the write has to be closed to everyone but an internal admin,
+// and the effect has to be real on both sides of the switch.
+test('only an internal admin may switch the business model, and the switch moves isolation', async ({ page }) => {
+  type S = { id: string; parties: { role: string }[]; dealValueUsd?: number }
+  const put = (body: string) =>
+    page.evaluate(
+      `fetch('/api/business', {method:'PUT',headers:{'content-type':'application/json'},body:'${body}'}).then((r) => r.status)`,
+    )
+
+  // A viewer in the internal org is refused: admin only.
+  await login(page, 'ben.mor@galco-intl.com')
+  expect(await put('{"model":"operator"}')).toBe(403)
+  await page.getByTestId('user-menu').click()
+  await page.getByRole('button', { name: 'Log out' }).click()
+
+  // A partner ops user is refused too, and never sees the tab.
+  await login(page, 'dana@atlaspolymers.demo')
+  expect(await put('{"model":"operator"}')).toBe(403)
+  await page.goto('/settings')
+  // Tabs render as plain buttons, so assert on that and not on a role the component never sets.
+  await expect(page.getByRole('button', { name: 'Business model' })).toHaveCount(0)
+  await page.getByTestId('user-menu').click()
+  await page.getByRole('button', { name: 'Log out' }).click()
+
+  // The internal admin switches it from the UI, and is warned what it exposes.
+  await login(page, 'yigal.tzfira@galco-intl.com')
+  await page.goto('/settings?tab=business')
+  await expect(page.getByTestId('isolation-warning')).toHaveCount(0)
+  await page.getByTestId('business-model-hint').waitFor()
+  expect(await put('{"model":"operator"}')).toBe(200)
+  await page.reload()
+  await expect(page.getByTestId('isolation-warning')).toBeVisible()
+  await page.getByTestId('user-menu').click()
+  await page.getByRole('button', { name: 'Log out' }).click()
+
+  // Operator mode: the partner sees the whole party list again, and no deal economics.
+  await login(page, 'dana@atlaspolymers.demo')
+  const asOperator = (await page.evaluate(`fetch('/api/shipments').then((r) => r.json())`)) as S[]
+  expect(asOperator.some((s) => s.parties.some((p) => p.role === 'consignee'))).toBe(true)
+  for (const s of asOperator) expect(s.dealValueUsd).toBeUndefined()
+  await page.getByTestId('user-menu').click()
+  await page.getByRole('button', { name: 'Log out' }).click()
+
+  // Back to trader, and isolation returns.
+  await login(page, 'yigal.tzfira@galco-intl.com')
+  expect(await put('{"model":"trader"}')).toBe(200)
+  await page.getByTestId('user-menu').click()
+  await page.getByRole('button', { name: 'Log out' }).click()
+  await login(page, 'dana@atlaspolymers.demo')
+  const asTrader = (await page.evaluate(`fetch('/api/shipments').then((r) => r.json())`)) as S[]
+  expect(asTrader.some((s) => s.parties.some((p) => p.role === 'consignee'))).toBe(false)
+})
+
 test('shipment map marks every port of call and expands one with its ETA', async ({ page }) => {
   await login(page, 'effi.mor@galco-intl.com')
   // s36 is seeded mid-voyage: Busan → Singapore (transshipment) → Antwerp.

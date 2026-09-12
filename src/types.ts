@@ -75,6 +75,21 @@ export interface ShipmentComment {
   at: string
 }
 
+// ---- Business model ----
+// 'trader' is Yigal: he buys from producers and sells to importers, and is paid a commission
+// retained out of the producer's side of one all-in price. 'operator' is the model Tidelane was
+// originally built on, a platform running freight for large-volume shippers.
+//
+// The mode is one row for the whole deployment, not a user preference, because 'operator' turns
+// counterparty isolation off. See migrations/0008_business_profile.sql and docs/trader-model.md.
+export type BusinessModel = 'trader' | 'operator'
+
+export interface BusinessProfile {
+  model: BusinessModel
+  commissionRatePct: number // house rate; a shipment may carry its own
+  updatedAt: string
+}
+
 export interface Shipment {
   id: string
   bookingRef: string
@@ -97,6 +112,13 @@ export interface Shipment {
   commodity: string
   co2Tons: number
   freightCostUsd: number
+  // Trader economics. Only dealValueUsd and commissionRatePct are stored; the other two are
+  // derived on read so a changed rate cannot leave a stale commission behind. All four are
+  // absent in operator mode, and dealValueUsd is absent on a shipment booked without one.
+  dealValueUsd?: number // X: goods + freight + insurance + duty, what the importer is invoiced
+  commissionRatePct?: number // the rate actually applied, house rate or this shipment's override
+  commissionUsd?: number // derived: dealValueUsd x commissionRatePct / 100. Yigal's income
+  producerPayableUsd?: number // derived: dealValueUsd - commissionUsd. What the producer receives
   onTime: boolean
   progress: number
   delayReason?: string

@@ -10,11 +10,12 @@ import MilestoneTimeline from '../components/shipments/MilestoneTimeline'
 import RouteMap from '../components/map/RouteMap'
 import { fmtDate, fmtDateShort } from '../data/random'
 import { EmptyState } from '../components/ui/inputs'
+import { fmtUsd, roleLabel } from '../lib/vocabulary'
 
 export default function ShipmentDetailPage() {
   const { id } = useParams()
   const { getShipment, approveDocument, addComment, loading } = useData()
-  const { canWrite } = useAuth()
+  const { canWrite, vocabulary } = useAuth()
   const [tab, setTab] = useState('containers')
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
@@ -31,6 +32,20 @@ export default function ShipmentDetailPage() {
     )
   }
 
+  // In trader mode the money that matters is the deal, not the freight: the importer is invoiced
+  // the deal value, the commission is what Yigal keeps, and the producer receives the rest. The
+  // three always reconcile, because the worker derives the last two from the first.
+  const money: [string, string][] =
+    vocabulary.showsCommission && s.dealValueUsd !== undefined
+      ? [
+          ['Deal value (invoiced to importer)', fmtUsd(s.dealValueUsd)],
+          ['Commission rate', `${s.commissionRatePct}%`],
+          ['Commission', fmtUsd(s.commissionUsd ?? 0)],
+          ['Producer receives', fmtUsd(s.producerPayableUsd ?? 0)],
+          ['Freight cost (inside the deal value)', fmtUsd(s.freightCostUsd)],
+        ]
+      : [['Freight cost', fmtUsd(s.freightCostUsd)]]
+
   const facts: [string, string][] = [
     ['Carrier', `${s.carrier.name} (${s.carrier.scac})`],
     ['Vessel / Voyage', `${s.vessel.name} · ${s.vessel.voyage}`],
@@ -38,7 +53,7 @@ export default function ShipmentDetailPage() {
     ['ETA', fmtDate(s.eta)],
     ['Incoterm', s.incoterm],
     ['Commodity', s.commodity],
-    ['Freight cost', `$${s.freightCostUsd.toLocaleString()}`],
+    ...money,
     ['CO₂ estimate', `${s.co2Tons} t`],
   ]
 
@@ -192,7 +207,7 @@ export default function ShipmentDetailPage() {
               <div key={party.id} className="rounded-lg border border-slate-200 p-4">
                 <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                   <Building2 size={13} />
-                  {party.role}
+                  {roleLabel(vocabulary, party.role)}
                 </div>
                 <div className="mt-2 text-[13px] font-semibold text-slate-800">{party.name}</div>
                 <div className="mt-0.5 text-[12px] text-slate-500">{party.contact}</div>

@@ -15,6 +15,7 @@ import {
   Wand2,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { roleLabel, type Vocabulary } from '../lib/vocabulary'
 import { Card, CardHeader } from '../components/ui/Card'
 
 const ACCOUNTS = [
@@ -38,12 +39,26 @@ const PERMISSIONS: { action: string; admin: boolean; ops: boolean; viewer: boole
   { action: 'Manage users & organizations', admin: true, ops: false, viewer: false },
 ]
 
-const ORG_SCOPES = [
+// Labels come from the business model rather than being written twice; `sees` is the access rule,
+// which is the same sentence in both models except for counterparty isolation.
+const orgScopes = (v: Vocabulary) => [
   { type: 'internal', label: 'Tidelane', sees: 'Every shipment in the network' },
-  { type: 'shipper', label: 'Exporter / producer', sees: 'Only shipments they are a party to, and not the other commercial counterparties on them' },
-  { type: 'forwarder', label: 'Freight forwarder', sees: 'Only the shipments they forward' },
-  { type: 'consignee', label: 'Importer / buyer', sees: 'Only their inbound shipments, and not who the goods were bought from' },
-  { type: 'carrier', label: 'Ocean carrier', sees: 'Only the shipments they carry' },
+  {
+    type: 'shipper',
+    label: roleLabel(v, 'shipper'),
+    sees: v.showsCommission
+      ? 'Only shipments they are a party to, and not the other commercial counterparties on them'
+      : 'Only shipments they are a party to',
+  },
+  { type: 'forwarder', label: roleLabel(v, 'forwarder'), sees: 'Only the shipments they forward' },
+  {
+    type: 'consignee',
+    label: roleLabel(v, 'consignee'),
+    sees: v.showsCommission
+      ? 'Only their inbound shipments, and not who the goods were bought from'
+      : 'Only their inbound shipments',
+  },
+  { type: 'carrier', label: roleLabel(v, 'carrier'), sees: 'Only the shipments they carry' },
 ]
 
 const MODULES = [
@@ -151,7 +166,9 @@ const Code = ({ children }: { children: string }) => (
 )
 
 export default function GuidePage() {
-  const { status } = useAuth()
+  // Read before login too, where there is no business profile yet; the vocabulary then falls back
+  // to the default model, which is what a fresh deployment actually runs.
+  const { status, vocabulary } = useAuth()
   const backTo = status === 'authed' ? '/' : '/login'
   const backLabel = status === 'authed' ? 'Back to the app' : 'Go to sign-in'
 
@@ -180,9 +197,9 @@ export default function GuidePage() {
           <CardHeader title="What is Tidelane?" />
           <div className="space-y-3 px-5 pb-5 text-[13px] leading-relaxed text-slate-600">
             <p>
-              Tidelane is a demo of a container shipping management platform for traders and large-volume shippers —
-              the kind of system that connects producers, importers, forwarders and ocean carriers in one place:
-              booking operations, door-to-door tracking, document workflows, collaboration and reporting.
+              Tidelane is a demo of a container shipping management platform for {vocabulary.audience} — the kind of
+              system that connects producers, importers, forwarders and ocean carriers in one place: booking
+              operations, door-to-door tracking, document workflows, collaboration and reporting.
             </p>
             <p>
               The analogy: think of it as a <strong className="font-semibold text-slate-700">port control tower</strong>.
@@ -235,7 +252,7 @@ export default function GuidePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {ORG_SCOPES.map((o) => (
+                  {orgScopes(vocabulary).map((o) => (
                     <tr key={o.type} className="border-b border-slate-50 last:border-0">
                       <td className="py-2.5 pr-3"><Code>{o.type}</Code></td>
                       <td className="px-3 py-2.5 text-slate-700">{o.label}</td>
@@ -280,10 +297,9 @@ export default function GuidePage() {
               see shipments where their company is a party, each from their own perspective.
             </p>
             <p className="mt-2 text-[12px] text-slate-500">
-              On top of that, a partner sees their own company and the service providers on a shipment, never another
-              company in a commercial role. A trader buys from a producer and sells to an importer, and both are
-              parties to the same shipment; showing either one the other is how a trader gets cut out of his own deal.
-              The rule covers comment authors and document uploaders too, but it cannot filter the text of a comment.
+              {vocabulary.showsCommission
+                ? 'On top of that, a partner sees their own company and the service providers on a shipment, never another company in a commercial role. A trader buys from a producer and sells to an importer, and both are parties to the same shipment; showing either one the other is how a trader gets cut out of his own deal. The rule covers comment authors and document uploaders too, but it cannot filter the text of a comment.'
+                : 'In the freight operator model there is no counterparty isolation: an exporter and a consignee on one bill of lading already know each other, so every partner company on a shipment sees the full party list.'}
             </p>
             <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
               All seven accounts share one password while this is a demo. That has to end before any real shipment data

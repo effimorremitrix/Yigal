@@ -15,6 +15,13 @@ export interface InvoiceSeed {
   incoterm: string
   freightCostUsd: number
   shipperName: string | null
+  // Trader mode only; null in operator mode. Presence is how this adapter knows which model it is
+  // billing under, so the mode never has to be passed alongside every row. See loadInvoiceSeeds.
+  //
+  // The commission is deliberately NOT here. This invoice is addressed to the importer, and the
+  // one number he must not be handed is what Yigal kept out of the producer's side.
+  dealValueUsd: number | null
+  consigneeName: string | null
 }
 
 // Positional hash so 's12' and 's21' get different streams.
@@ -29,7 +36,8 @@ export function createQuickBooksMockAdapter(loadSeeds: () => Promise<InvoiceSeed
     async healthCheck() {
       return { ok: true, mode: 'mock', message: 'Mock adapter responding; no external call was made', checkedAt: new Date().toISOString() }
     },
-    // One invoice per shipment, billed to the shipper. `updatedSince` is ignored: the mock is a full ledger.
+    // One invoice per shipment, billed to whichever side the business model sells to.
+    // `updatedSince` is ignored: the mock is a full ledger.
     async listInvoices() {
       return (await loadSeeds()).map(mockInvoice)
     },
@@ -40,16 +48,23 @@ export function createQuickBooksMockAdapter(loadSeeds: () => Promise<InvoiceSeed
 // delivered shipments are mostly paid, arrived ones half paid, everything else still open.
 export function mockInvoice(seed: InvoiceSeed): VendorInvoice {
   const rng = mulberry32(seedOf(seed.shipmentId))
+  const trading = seed.dealValueUsd !== null
+  // Trader mode: the importer is invoiced the all-in deal value, nothing on top. Freight,
+  // insurance and duty are already inside that number, and the commission comes out of the
+  // producer's side rather than being added to the buyer's, so a surcharge here would be wrong
+  // twice over. Operator mode keeps selling freight with a surcharge and a documentation fee.
   const surchargePct = int(rng, 3, 9)
   const docFee = pick(rng, [45, 60, 75])
-  const totalAmount = round2(seed.freightCostUsd * (1 + surchargePct / 100) + docFee)
+  const totalAmount = trading
+    ? round2(seed.dealValueUsd as number)
+    : round2(seed.freightCostUsd * (1 + surchargePct / 100) + docFee)
   const txnDate = shiftDays(seed.etd, -3)
 
   let balance = totalAmount
   if (seed.status === 'delivered') balance = rng() < 0.8 ? 0 : round2(totalAmount * pick(rng, [0.25, 0.5]))
   else if (seed.status === 'arrived') balance = round2(totalAmount * 0.5)
 
-  const customerName = seed.shipperName ?? 'Walk-in customer'
+  const customerName = (trading ? seed.consigneeName : seed.shipperName) ?? 'Walk-in customer'
   return {
     externalId: `mock-${seed.shipmentId}`,
     docNumber: `INV-${seed.bookingRef.replace(/^TL-/, '')}`,
@@ -62,7 +77,9 @@ export function mockInvoice(seed: InvoiceSeed): VendorInvoice {
     totalAmount,
     balance,
     vendorStatus: 'EmailSent',
-    memo: `Ocean freight ${seed.originCode} → ${seed.destinationCode}, ${seed.incoterm}, booking ${seed.bookingRef}`,
+    memo: trading
+      ? `Goods delivered ${seed.originCode} → ${seed.destinationCode}, ${seed.incoterm}, booking ${seed.bookingRef}`
+      : `Ocean freight ${seed.originCode} → ${seed.destinationCode}, ${seed.incoterm}, booking ${seed.bookingRef}`,
     vendorUpdatedAt: balance < totalAmount ? shiftDays(seed.eta, 3) : txnDate,
   }
 }

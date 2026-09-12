@@ -15,6 +15,7 @@ import {
   YAxis,
 } from 'recharts'
 import { useData } from '../context/DataContext'
+import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
 import { TODAY } from '../data/random'
 
@@ -24,6 +25,7 @@ const teuOf = (type: string) => (type === '20DV' ? 1 : 2)
 
 export default function AnalyticsPage() {
   const { shipments } = useData()
+  const { vocabulary } = useAuth()
 
   // Last 6 calendar months (including the anchor month).
   const months = Array.from({ length: 6 }, (_, i) => {
@@ -67,18 +69,35 @@ export default function AnalyticsPage() {
   const totalCo2 = Math.round(shipments.reduce((n, s) => n + s.co2Tons, 0))
   const avgCostPerTeu = Math.round(totalCost / totalTeu)
 
+  // Trader mode reports the book it earns on: what was invoiced, what was kept, and the rate that
+  // produced it. The effective rate is commission over deal value rather than the house rate, so a
+  // shipment carrying its own rate moves it and the tile stays honest.
+  const totalDeal = shipments.reduce((n, s) => n + (s.dealValueUsd ?? 0), 0)
+  const totalCommission = shipments.reduce((n, s) => n + (s.commissionUsd ?? 0), 0)
+  const effectiveRate = totalDeal > 0 ? (totalCommission / totalDeal) * 100 : 0
+  const tradingTiles = vocabulary.showsCommission && totalDeal > 0
+
+  const tiles = tradingTiles
+    ? [
+        { label: 'Total volume (TEU)', value: totalTeu.toLocaleString() },
+        { label: 'Deal value invoiced', value: `$${(totalDeal / 1e6).toFixed(2)}M` },
+        { label: 'Commission earned', value: `$${(totalCommission / 1e3).toFixed(0)}K` },
+        { label: 'Effective rate', value: `${effectiveRate.toFixed(2)}%` },
+      ]
+    : [
+        { label: 'Total volume (TEU)', value: totalTeu.toLocaleString() },
+        { label: 'Freight spend', value: `$${(totalCost / 1e6).toFixed(2)}M` },
+        { label: 'Avg cost / TEU', value: `$${avgCostPerTeu.toLocaleString()}` },
+        { label: 'CO₂ emitted', value: `${totalCo2.toLocaleString()} t` },
+      ]
+
   const tooltipStyle = { fontSize: 12, borderRadius: 8 }
   const axisTick = { fontSize: 11, fill: '#94a3b8' }
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        {[
-          { label: 'Total volume (TEU)', value: totalTeu.toLocaleString() },
-          { label: 'Freight spend', value: `$${(totalCost / 1e6).toFixed(2)}M` },
-          { label: 'Avg cost / TEU', value: `$${avgCostPerTeu.toLocaleString()}` },
-          { label: 'CO₂ emitted', value: `${totalCo2.toLocaleString()} t` },
-        ].map((k) => (
+        {tiles.map((k) => (
           <Card key={k.label} className="p-4">
             <div className="text-[12px] text-slate-500">{k.label}</div>
             <div className="mt-1 text-[22px] font-semibold text-slate-900">{k.value}</div>

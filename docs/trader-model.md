@@ -1,173 +1,181 @@
 # Yigal is a trader — what that changes
 
-Written 12 September 2026, before the Los Angeles visit. Nothing here is built except the
-counterparty isolation in **The leak** below. Everything else is a session 4 decision, made
-against his real records rather than against this document.
+Last corrected 12 September 2026. An earlier version of this document said Yigal earns "the
+margin between two prices". **That was wrong**, and the correction matters because it makes the
+model smaller rather than larger. The wrong version proposed a `Trade` entity holding two
+independently negotiated prices per shipment. None of that is needed and none of it was built.
 
 ## The one sentence
 
-**Yigal buys from producers and manufacturers, and sells to importers.** He is a principal, not
-an agent and not a carrier: he takes title to the goods, and his income is the difference
-between the two prices, not a fee on top of one of them.
+**Yigal buys from producers and sells to importers, and is paid a commission retained out of the
+producer's side of one price.**
 
-Tidelane was built on the opposite assumption. It models an operator running freight for
-large-volume shippers, where the internal organization moves other people's cargo and the
-counterparties are typed by their role on the bill of lading. That is a forwarder's model. It
-is not a merchant's.
+There is one price, not two:
 
-## The shape of one deal
+```
+X  = the all-in deal value: goods + freight + insurance + duty
+     the importer is invoiced X
+     the producer receives  X − commission
+     Yigal keeps            commission   (default 2% of X)
+```
 
-Every physical shipment carries two commercial transactions.
+The fee comes **out of the producer's side**, not on top of the buyer's. The importer pays the
+headline price either way, which is the commercially interesting part: his presence does not make
+the goods more expensive, so the buyer has no price incentive to go around him.
 
-| | Buy leg | Sell leg |
+**The analogy:** a travel agent paid out of the hotel's rate. The traveller pays the rack rate,
+the agent keeps a slice, the hotel nets less. Nobody is paying extra for the agent; the supplier
+funds him. (An earlier version of this document used a market stallholder buying a crate at dawn
+and selling it by the piece. That analogy is wrong for the same reason the old economics were
+wrong: a stallholder sets his own margin.)
+
+## What is built
+
+| Term | Where | Meaning |
 |---|---|---|
-| Counterparty | producer / manufacturer | importer / buyer |
-| Yigal's position | buyer; consignee on the paper | seller; shipper on the paper |
-| Paper | the supplier's invoice to him (payable) | his invoice to the customer (receivable) |
-| Incoterm | typically origin-side, e.g. FOB | typically destination-side, e.g. CIF |
-| Money | cost | revenue |
+| **Deal value** | `shipments.deal_value_usd`, stored | X. What the importer is invoiced |
+| **Commission rate** | `business_profile.commission_rate_pct` (house), `shipments.commission_rate_pct` (override) | Default 2.0 |
+| **Commission** | derived, never stored | `dealValue × rate / 100`. Yigal's income |
+| **Producer payable** | derived, never stored | `dealValue − commission` |
 
-The delta is margin. **Tidelane today cannot express the number his business actually runs on.**
+`deriveEconomics` in `worker/business.ts` is the only place the arithmetic lives, so the shipment
+view and the invoice ledger cannot disagree about what he earned. It is derived rather than stored
+for the same reason `Invoice.status` is: one source of truth, so changing a rate re-derives the
+pair and the two can never drift. `producerPayable + commission === dealValue` holds to the cent,
+because the payable is subtracted from the already-rounded commission rather than rounded
+separately.
 
-The analogy that fits: a market stallholder who buys a crate at the wholesale market at dawn and
-sells it by the piece all morning. The crate is one physical object. The two transactions on it
-are unrelated to each other, have different counterparties, different prices and different
-terms, and the stallholder's whole business is the gap between them. Tidelane currently tracks
-the crate and neither transaction.
+**A missing price reads as missing.** A shipment booked before an agreed price, or booked in
+operator mode, carries no deal value, and then no commission and no payable either — never a zero,
+and never a number inferred from the freight cost. Inventing a customer's price is worse than
+showing a blank.
 
-## Naming
+**The commission never travels with the invoice.** The mock QuickBooks invoice is addressed to the
+importer, and the one number he must not be handed is what Yigal kept out of the producer's side.
+`InvoiceSeed` deliberately does not carry it.
 
-Terms to use consistently, in code, in the guide and out loud in the sessions.
+## The business model switch
 
-| Term | Meaning |
-|---|---|
-| **Principal** | Yigal's position: takes title, carries the risk, is not paid a fee |
-| **Trade** | one commercial transaction attached to a shipment; has a side |
-| **Buy leg** / **sell leg** | the purchase from the producer; the sale to the importer |
-| **Back-to-back** | one physical shipment carrying a matched buy and sell |
-| **Supplier** / **customer** | the commercial axis, as opposed to shipper/consignee which is the transport axis |
-| **Counterparty isolation** | the rule that a buy-leg party never learns a sell-leg party |
-| **Switch bill of lading** | the trade's own name for the same idea, on paper |
+`business_profile` is one row for the whole deployment, selecting how the application presents
+itself.
 
-Hebrew where it is natural in the room: סוחר, רגל קנייה, רגל מכירה, מרווח, ספק, לקוח.
+| | `trader` (default) | `operator` |
+|---|---|---|
+| Party labels | Producer / Importer | Exporter / Consignee |
+| Shipment money | deal value, rate, commission, producer payable | freight cost only |
+| Analytics | deal value invoiced, commission earned, effective rate | freight spend, avg cost per TEU |
+| Invoices | the importer is billed the deal value | the shipper is billed freight plus a surcharge |
+| Counterparty isolation | **on** | **off** |
 
-## The leak, and what was done about it
+`src/lib/vocabulary.ts` is the single definition of both vocabularies. No page hardcodes a role
+label; add wording there or it will drift.
 
-This is the one item that was not left for session 4, because it is a defect rather than a
-feature and it blocks loading real data.
+**Why one row and not a user preference.** This gates server-side access control. Per-user, a
+partner user could switch off the rule that hides their counterparties from them. So the write is
+`requireInternal(user, ['admin'])`, the worker reads the row on every request, and nothing is
+trusted from the client. The read is open to any signed-in user because every screen's vocabulary
+depends on it, and knowing the model discloses nothing.
 
-Partner visibility is "your organization sees shipments where it is a party", and the shipment
-carried its full party list. Put the producer and the importer on one shipment and each could
-read the other's name. For a trader the supplier list and the customer list **are** the
-business; disclosing one to the other is how he gets disintermediated. The trade already knows
-this, which is why it invented the switch bill of lading and the neutral packing list: one
-physical movement, deliberately two sets of paper.
+**`operator` turns counterparty isolation off**, and that is the one control in the application
+that widens who can see whom. It is correct for that model — an exporter and a consignee on one
+bill of lading already know each other, and withholding either would break the collaboration the
+model exists for — and it is wrong with a trader's real supplier and customer data loaded. The
+Settings UI says so at the control. The security checklist in `CLAUDE.md` requires confirming the
+mode reads `trader` before real data goes in.
 
-`worker/shipments.ts` now withholds it. A partner user sees:
+## Counterparty isolation
 
-- their own organization's party rows
-- the service providers, `forwarder` and `carrier`
+The rule: a partner user sees their own organization's party rows plus the service providers
+(`forwarder`, `carrier`), and never another organization in a commercial role. Carrier and
+forwarder stay visible deliberately — the carrier and vessel are already on the shipment record
+and on the bill of lading, and a forwarder cannot work blind.
 
-and never another organization in a commercial role. Carrier and forwarder stay visible
-deliberately: the carrier and vessel are already on the shipment record and on the bill of
-lading, and a forwarder cannot do the job blind.
+Why it matters to a trader: the producer and the importer are both parties to one shipment, and
+the supplier list and the customer list **are** the business. The trade already knows this and
+calls the paper version a **switch bill of lading**: one physical movement, deliberately two sets
+of paper.
 
-The same filter closes the two doors beside the party list. Comment authors and document
-uploaders are withheld when they belong to a withheld counterparty.
+The retained-commission correction does not weaken the case. A buyer who knows the rate could work
+out what the producer received; what he must not learn is **who the producer is**.
+
+The same filter closes the two doors beside the party list: comment authors and document uploaders
+belonging to a withheld counterparty are withheld too.
 
 **What it does not close, stated plainly:**
 
 - Comment text is free prose. A seeded comment already reads "Draft B/L shared — please review
   consignee details." A sentence naming the other side cannot be filtered, so the exception
-  register has to record whether the collaboration thread is used across counterparties at all,
-  or only between Yigal and one side at a time.
+  register has to record whether the collaboration thread is used across counterparties at all.
 - The match is by author name, because `comments.author` and `documents.uploaded_by` are plain
-  text with no organization link. Making that link structural is a session 4 item.
-- `shipper` and `consignee` are transport roles, which is all the model carries today. Once the
-  supplier/customer axis exists, the rule should be expressed on that axis instead.
+  text with no organization link. Making that structural is a session 4 item.
+- `shipper` and `consignee` are transport roles, which is all the model carries today.
 
-Covered by `e2e/app.spec.ts` — "a partner never learns the other commercial counterparties on a
-shipment", which asserts it on both the list and the detail endpoint.
+Covered by `e2e/app.spec.ts`: "a partner never learns the other commercial counterparties on a
+shipment" (trader mode, list and detail endpoints, comment and document doors) and "only an
+internal admin may switch the business model, and the switch moves isolation" (both directions).
 
-## What is still wrong, for session 4
+## What is still open, for session 4
 
-These are proposals, not decisions. Session 4 (Sun 27 Sep) is the reality check against his real
-records, and that is where each one is confirmed, changed or dropped.
+Session 4 is the reality check against his real records. Each of these is a proposal, not a
+decision.
 
-### 1. The fork that governs everything else: back-to-back or stock?
+### 1. Is it really 2 percent, and really on the all-in value?
 
-**Ask this in session 1, before the model work.** Does he match a buyer before the container
-moves, or does he buy into stock and sell later?
+The first thing to check, because everything above assumes it. Ask specifically:
 
-- **Back-to-back.** Buy and sell are matched before sailing. A trade hangs off the shipment,
-  margin is per shipment, and the model stays small.
-- **Stock.** Purchase and sale are decoupled; one purchase may split across several sales, or one
-  sale may draw on several purchases. A trade cannot hang off a shipment. It needs its own
-  entity with a many-to-many to shipments, and margin becomes an allocation question with a
-  costing convention behind it.
-- **Both.** The model has to carry the decoupled case, and back-to-back is the degenerate
-  one-to-one. Same cost as stock.
+- Is the rate the same for every producer and every customer, or does it move?
+- Is it charged on goods only, or on goods plus freight plus insurance plus duty as modelled?
+- When the freight cost changes after the price is agreed, who absorbs it?
+- Are there deals where he is paid differently altogether — a flat fee, or a real markup?
 
-Everything below assumes back-to-back until session 1 says otherwise. **Do not build until it
-does.**
+A per-shipment rate column already exists and `deriveEconomics` honours it, but nothing in the UI
+sets one. If session 4 finds the rate moves often, that control is the next small thing to build.
 
-### 2. Trade as an entity
+### 2. Incoterm per leg
 
-```
-Trade
-  id
-  shipmentId          -- becomes a join table if the answer to (1) is stock or both
-  side                -- 'buy' | 'sell'
-  counterpartyOrgId   -- the producer, or the importer
-  incoterm            -- per leg, not per shipment
-  currency
-  goodsValue
-  invoiceId           -- links to the QuickBooks row, once AP exists
-```
+`shipments.incoterm` is a single column. He buys on one term and sells on another, and FOB in with
+CIF out is ordinary. One column reports one of the two with no sign the other exists.
 
-### 3. Incoterm is per leg
+### 3. A supplier/customer axis
 
-`shipments.incoterm` is a single column (`migrations/0001_schema.sql:53`). FOB in and CIF out is
-the ordinary case, and one column reports one of the two with no sign that the other exists.
+`shipper` and `consignee` are transport roles. A producer is a supplier, an importer is a
+customer, and the same organization can be both across different deals. That belongs on the deal,
+not on the organization.
 
-### 4. Organization type has no commercial axis
+### 4. Payables
 
-`internal | shipper | forwarder | consignee | carrier` are transport roles. A producer is a
-supplier; an importer is a customer; the same organization can be both across different deals.
-Type on the organization is probably the wrong place for it — it belongs on the trade.
+QuickBooks pulls receivables. The producer's invoice to Yigal is a payable, and without it there is
+no independent check on the producer payable the app derives. Session 6 decides receivables-only or
+both; if payables are out, the Invoices page should say receivables rather than looking complete.
 
-### 5. Invoices are receivable-only
+### 5. Back-to-back or stock
 
-`worker/shipments.ts` bills the shipper, and the QuickBooks connector pulls invoices. Half a
-trader's money is payable: the producer's invoice to him. Without it there is no cost, no
-margin, and the Invoices page shows one side of every deal while looking complete.
+Still a session 1 question, but it matters far less than it did. With one deal value and one rate
+per shipment, matching a buyer before the container moves needs no extra entity at all. Only buying
+into stock and selling later would, and nothing is built for it.
 
-Session 6 has to decide AR-only or AR and AP. If AP is out of scope, the Invoices page should
-say receivables, not invoices.
+### 6. The old weak spots, re-read
 
-### 6. The questions already open, re-read as a trader's
+`CLAUDE.md` lists four. Three are sharper as a trader's questions:
 
-CLAUDE.md lists four unresolved weak spots. Three of them are sharper now:
-
-- *Can a shipment carry containers for more than one consignee?* For a trader this is one
-  purchase split across several customers, which is the stock case in disguise.
-- *Does a document belong to a shipment or a container?* A commercial invoice belongs to a
-  **trade**, and there are two of them per shipment with different numbers and different values.
-- *Can an invoice cover more than one shipment?* Almost certainly yes for a trader, and it is
-  the same allocation question as the stock case.
+- *Can a shipment carry containers for more than one consignee?* That is one purchase split across
+  several customers, which is the stock case in disguise.
+- *Does a document belong to a shipment or a container?* A commercial invoice belongs to a deal,
+  and there are two per shipment with different numbers.
+- *Can an invoice cover more than one shipment?* Almost certainly yes, and it is the same
+  allocation question.
 
 ## What this changes about Deckhand
 
 Deckhand's mechanism is unaffected: text in, paste-ready block out. Its **intake** is two-sided,
-and that does touch the 25 September delivery.
+and that touches the 25 September delivery.
 
 | | Buy side | Sell side |
 |---|---|---|
 | Sender | the producer, or the producer's forwarder | his own carrier or forwarder |
 | Typical document | booking confirmation, packing list, mill certificate | booking confirmation, arrival notice, draft B/L |
-| Language and format | follows the producer's country | follows the carrier |
+| Format follows | the producer's country and house style | the carrier |
 
-The definition of done says Deckhand handles "the three most common email formats in his actual
-inbox". That may mean three per side, which is six. **Session 1 has to count the two sides
-separately**, or session 2 ships against half the corpus and looks broken on the first real
-email from the other direction.
+"The three most common email formats in his actual inbox" may mean three per side, which is six.
+**Session 1 has to count the two sides separately**, or session 2 ships against half the corpus and
+looks broken on the first real email from the other direction.

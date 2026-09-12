@@ -10,6 +10,7 @@ import {
   startQuickBooksOAuth,
   testIntegration,
 } from './integrations/api'
+import { getBusinessProfile, putBusinessProfile } from './business'
 import { extractIdentifiers } from './deckhand/api'
 import { listInvoices, syncInvoices } from './invoices'
 import { Router, type RequestContext } from './router'
@@ -63,6 +64,17 @@ router.add('POST', '/api/shipments/:id/comments', async ({ request, env, user, p
   const { text } = await body<{ text?: string }>(request)
   return addComment(env, requireRole(user, ['admin', 'ops']), params.id, (text ?? '').trim())
 })
+
+// Any signed-in user reads the business model, because every screen's vocabulary depends on it.
+// Only an internal admin writes it: switching to 'operator' turns counterparty isolation off, so
+// this is an access-control change wearing a settings control's clothes.
+router.add('GET', '/api/business', async ({ env, user }) => {
+  requireUser(user)
+  return getBusinessProfile(env)
+})
+router.add('PUT', '/api/business', async ({ request, env, user }) =>
+  putBusinessProfile(env, requireInternal(user, ['admin']), await body(request)),
+)
 
 router.add('GET', '/api/settings', async ({ env, user }) => getSettings(env, requireUser(user)))
 router.add('PUT', '/api/settings', async ({ request, env, user }) => putSettings(env, requireUser(user), await body(request)))

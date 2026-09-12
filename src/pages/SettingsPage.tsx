@@ -7,6 +7,8 @@ import { Card, CardHeader } from '../components/ui/Card'
 import Tabs from '../components/ui/Tabs'
 import { inputCls, SavedFlash, Select, Toggle } from '../components/ui/inputs'
 import IntegrationsTab from '../components/settings/IntegrationsTab'
+import { VOCABULARIES } from '../lib/vocabulary'
+import type { BusinessModel } from '../types'
 
 const TIMEZONES = ['UTC', 'Asia/Jerusalem', 'Europe/Paris', 'Europe/London', 'America/New_York', 'America/Los_Angeles', 'Asia/Shanghai', 'Asia/Singapore']
 const DATE_FORMATS = ['dd MMM yyyy', 'dd/MM/yyyy', 'MM/dd/yyyy', 'yyyy-MM-dd']
@@ -115,6 +117,100 @@ function PreferencesTab() {
       <div className="flex items-center gap-3">
         <button type="submit" className="rounded-lg bg-brand-600 px-4 py-2 text-[13px] font-medium text-white hover:bg-brand-700">
           Save preferences
+        </button>
+        <SavedFlash show={saved} />
+      </div>
+    </form>
+  )
+}
+
+// The business model of the whole workspace, not a personal preference, which is why this tab is
+// internal-admin only and why the API refuses the write to anyone else. Switching to the freight
+// operator model turns counterparty isolation off, so the consequence is spelled out at the
+// control rather than left in a document nobody opens.
+function BusinessTab() {
+  const { business, saveBusiness, vocabulary } = useAuth()
+  const [model, setModel] = useState<BusinessModel>(business?.model ?? 'trader')
+  const [rate, setRate] = useState(String(business?.commissionRatePct ?? 2))
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!business) return
+    setModel(business.model)
+    setRate(String(business.commissionRatePct))
+  }, [business])
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    setError('')
+    const parsed = Number(rate)
+    if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
+      setError('Commission rate must be a number between 0 and 100')
+      return
+    }
+    try {
+      await saveBusiness({ model, commissionRatePct: parsed })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Save failed')
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="max-w-xl space-y-4 p-5">
+      <label className="block">
+        <span className="mb-1.5 block text-[12px] font-medium text-slate-500">Business model</span>
+        <Select
+          value={model}
+          onChange={(v) => setModel(v as BusinessModel)}
+          options={Object.values(VOCABULARIES).map((v) => ({ value: v.model, label: v.modelLabel }))}
+        />
+        <span className="mt-1.5 block text-[12px] text-slate-500" data-testid="business-model-hint">
+          {model === 'trader'
+            ? 'You buy from producers and sell to importers. Shipments carry a deal value and your commission, and a partner company never sees the other commercial counterparties on a shipment.'
+            : 'You move other people\u2019s cargo for a fee. Shipments carry freight cost only.'}
+        </span>
+      </label>
+
+      {model === 'operator' && (
+        <div
+          className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800"
+          data-testid="isolation-warning"
+        >
+          <strong className="font-semibold">This turns counterparty isolation off.</strong> In the freight operator
+          model an exporter and a consignee on one bill of lading already know each other, so the party list, comment
+          authors and document uploaders are shown in full to every partner company on a shipment. Do not use this
+          model with a trader&rsquo;s real supplier and customer data loaded.
+        </div>
+      )}
+
+      <label className="block">
+        <span className="mb-1.5 block text-[12px] font-medium text-slate-500">House commission rate (%)</span>
+        <input
+          value={rate}
+          onChange={(e) => setRate(e.target.value)}
+          inputMode="decimal"
+          className={inputCls}
+          data-testid="commission-rate"
+          disabled={model !== 'trader'}
+        />
+        <span className="mt-1.5 block text-[12px] text-slate-500">
+          Applied to the deal value unless a shipment carries its own rate. Your commission comes out of what the
+          producer receives, so the importer is invoiced the deal value either way.
+        </span>
+      </label>
+
+      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-slate-600">
+        Currently presenting as <strong className="font-semibold text-slate-800">{vocabulary.modelLabel}</strong>, for{' '}
+        {vocabulary.audience}.
+      </div>
+
+      {error && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">{error}</div>}
+      <div className="flex items-center gap-3">
+        <button type="submit" className="rounded-lg bg-brand-600 px-4 py-2 text-[13px] font-medium text-white hover:bg-brand-700">
+          Save business model
         </button>
         <SavedFlash show={saved} />
       </div>
@@ -275,11 +371,14 @@ function AdminTab() {
 }
 
 export default function SettingsPage() {
-  const { isAdmin } = useAuth()
+  const { isAdmin, isInternal } = useAuth()
   const [params] = useSearchParams()
   const tabs = [
     { id: 'profile', label: 'Profile' },
     { id: 'preferences', label: 'Preferences' },
+    // Internal admins only, matching the API. A partner admin manages their own people but never
+    // the model the whole workspace runs on.
+    ...(isAdmin && isInternal ? [{ id: 'business', label: 'Business model' }] : []),
     ...(isAdmin ? [{ id: 'admin', label: 'Users & Organizations' }, { id: 'integrations', label: 'Integrations' }] : []),
   ]
   // ?tab=integrations deep-links straight to a tab (used by the QuickBooks OAuth return and the Invoices page).
@@ -294,6 +393,7 @@ export default function SettingsPage() {
       </div>
       {tab === 'profile' && <ProfileTab />}
       {tab === 'preferences' && <PreferencesTab />}
+      {tab === 'business' && isAdmin && isInternal && <BusinessTab />}
       {tab === 'admin' && isAdmin && <AdminTab />}
       {tab === 'integrations' && isAdmin && <IntegrationsTab />}
     </Card>

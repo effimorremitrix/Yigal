@@ -9,6 +9,7 @@ export interface BookingPayload {
   incoterm: string
   commodity: string
   weightKg: number
+  dealValueUsd?: number
   containers: Record<string, number>
   schedule: {
     carrier: string
