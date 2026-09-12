@@ -3,14 +3,27 @@ import type { BusinessModel, BusinessProfile } from '../src/types'
 
 const MODELS: BusinessModel[] = ['trader', 'operator']
 
-// What a deployment falls back to if the row is somehow missing. Deliberately the safer of the
-// two: 'trader' keeps counterparty isolation on, so a read failure cannot open up who sees whom.
+// What a deployment falls back to if the row cannot be read. Deliberately the safer of the two:
+// 'trader' keeps counterparty isolation ON, so a read failure can never open up who sees whom.
 const FALLBACK: BusinessProfile = { model: 'trader', commissionRatePct: 2, updatedAt: '' }
 
+/**
+ * Also survives the window where the code is deployed but 0008 has not been applied yet, because
+ * Workers Builds deploys on push and migrations are run by hand (CLAUDE.md hard rule 2). Without
+ * this, a missing `business_profile` table would throw out of every shipment read and take the
+ * whole application down rather than degrading one feature.
+ *
+ * The catch is narrow on purpose: it falls back, it does not pretend. The trader money fields
+ * simply do not appear (deriveEconomics has nothing to work from), the Invoices page and a new
+ * booking still fail loudly because they name the new columns, and isolation stays on. Run the
+ * migration; this is a cushion for the gap, not a substitute.
+ */
 export async function readBusinessProfile(env: Env): Promise<BusinessProfile> {
   const row = await env.DB.prepare(
     'SELECT model, commission_rate_pct, updated_at FROM business_profile WHERE id = 1',
-  ).first<{ model: string; commission_rate_pct: number; updated_at: string }>()
+  )
+    .first<{ model: string; commission_rate_pct: number; updated_at: string }>()
+    .catch(() => null)
   if (!row) return FALLBACK
   return {
     model: (MODELS as string[]).includes(row.model) ? (row.model as BusinessModel) : FALLBACK.model,
@@ -38,9 +51,11 @@ const round2 = (n: number): number => Math.round(n * 100) / 100
  */
 export function deriveEconomics(
   profile: BusinessProfile,
-  row: { deal_value_usd: number | null; commission_rate_pct: number | null },
+  row: { deal_value_usd?: number | null; commission_rate_pct?: number | null },
 ): DealEconomics {
-  if (profile.model !== 'trader' || row.deal_value_usd === null) return {}
+  // `== null` on purpose: null is an unpriced shipment, undefined is the column not being there
+  // yet on an un-migrated database. Either way there is no price, and NaN must never reach a page.
+  if (profile.model !== 'trader' || row.deal_value_usd == null) return {}
   const rate = row.commission_rate_pct ?? profile.commissionRatePct
   const commissionUsd = round2((row.deal_value_usd * rate) / 100)
   return {
