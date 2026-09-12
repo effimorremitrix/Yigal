@@ -29,13 +29,41 @@ export interface ShipmentRow {
   delay_reason: string | null
 }
 
+// Counterparty isolation. Yigal trades as a principal: he buys from producers and sells to
+// importers, so on one physical shipment the supplier and the customer are both parties and
+// neither is supposed to learn the other exists. The supplier list and the customer list are
+// the business; handing one to the other is how a trader gets cut out of his own deal. It is
+// the same reason the trade uses a switch bill of lading and a neutral packing list.
+//
+// So a partner user sees their own organization's party rows plus the service providers, and
+// never another commercial counterparty. Carrier and forwarder stay visible on purpose: the
+// carrier and vessel are already on the shipment record and on the bill of lading, and a
+// forwarder cannot do the job blind.
+//
+// 'shipper' and 'consignee' are transport roles off the bill of lading, which is all the model
+// carries today, and they are the two that can hold a commercial counterparty. The separate
+// supplier/customer axis is a session 4 decision; see docs/trader-model.md.
+const SERVICE_ROLES = new Set(['forwarder', 'carrier'])
+
+interface PartyRow {
+  shipment_id: string
+  id: string
+  org_id: number
+  name: string
+  role: string
+  contact: string
+}
+
+const seesParty = (user: SessionUser, p: PartyRow): boolean =>
+  user.orgType === 'internal' || p.org_id === user.orgId || SERVICE_ROLES.has(p.role)
+
 // Internal-org users see everything; partner users only shipments where their org is a party.
 const scopeClause = (user: SessionUser): { where: string; binds: unknown[] } =>
   user.orgType === 'internal'
     ? { where: '', binds: [] }
     : { where: 'WHERE EXISTS (SELECT 1 FROM shipment_parties sp WHERE sp.shipment_id = s.id AND sp.org_id = ?)', binds: [user.orgId] }
 
-async function assemble(env: Env, rows: ShipmentRow[]): Promise<Shipment[]> {
+async function assemble(env: Env, user: SessionUser, rows: ShipmentRow[]): Promise<Shipment[]> {
   if (rows.length === 0) return []
   const ids = rows.map((r) => r.id)
   const ph = ids.map(() => '?').join(',')
@@ -61,9 +89,22 @@ async function assemble(env: Env, rows: ShipmentRow[]): Promise<Shipment[]> {
   const mByS = group<{ shipment_id: string; key: string; label: string; location: string; planned: string; actual: string | null; status: string }>(milestones)
   const dByS = group<{ shipment_id: string; id: string; type: string; name: string; status: string; uploaded_by: string; updated_at: string }>(documents)
   const comByS = group<{ shipment_id: string; id: string; author: string; role: string; text: string; at: string }>(comments)
-  const pByS = group<{ shipment_id: string; id: string; name: string; role: string; contact: string }>(parties)
+  const pByS = group<PartyRow>(parties)
 
-  return rows.map((r) => ({
+  return rows.map((r) => {
+    const allParties = pByS.get(r.id) ?? []
+    const visibleParties = allParties.filter((p) => seesParty(user, p))
+    // Comments and documents carry a plain author name, not an organization, so a withheld
+    // counterparty is recognised by the contact name on the party row we just withheld. This is
+    // a name match because the schema gives nothing better; making the link structural is a
+    // session 4 item. It closes the structured doors only: comment text is free prose and a
+    // sentence naming the other side cannot be filtered, which is why the exception register
+    // has to say whether the collaboration thread is used across counterparties at all.
+    const hidden = new Set(
+      allParties.filter((p) => !seesParty(user, p)).flatMap((p) => [p.contact, p.name]),
+    )
+
+    return {
     id: r.id,
     bookingRef: r.booking_ref,
     origin: PORTS[r.origin_code],
@@ -99,22 +140,27 @@ async function assemble(env: Env, rows: ShipmentRow[]): Promise<Shipment[]> {
       actual: m.actual ?? undefined,
       status: m.status as Milestone['status'],
     })),
-    documents: (dByS.get(r.id) ?? []).map((d) => ({
-      id: d.id,
-      type: d.type as Shipment['documents'][number]['type'],
-      name: d.name,
-      status: d.status as Shipment['documents'][number]['status'],
-      uploadedBy: d.uploaded_by,
-      updatedAt: d.updated_at,
-    })),
-    comments: (comByS.get(r.id) ?? []).map((c) => ({ id: c.id, author: c.author, role: c.role, text: c.text, at: c.at })),
-    parties: (pByS.get(r.id) ?? []).map((p) => ({
+    documents: (dByS.get(r.id) ?? [])
+      .filter((d) => !hidden.has(d.uploaded_by))
+      .map((d) => ({
+        id: d.id,
+        type: d.type as Shipment['documents'][number]['type'],
+        name: d.name,
+        status: d.status as Shipment['documents'][number]['status'],
+        uploadedBy: d.uploaded_by,
+        updatedAt: d.updated_at,
+      })),
+    comments: (comByS.get(r.id) ?? [])
+      .filter((c) => !hidden.has(c.author))
+      .map((c) => ({ id: c.id, author: c.author, role: c.role, text: c.text, at: c.at })),
+    parties: visibleParties.map((p) => ({
       id: p.id,
       name: p.name,
       role: p.role as Shipment['parties'][number]['role'],
       contact: p.contact,
     })),
-  }))
+    }
+  })
 }
 
 export async function listShipments(env: Env, user: SessionUser): Promise<Response> {
@@ -122,7 +168,7 @@ export async function listShipments(env: Env, user: SessionUser): Promise<Respon
   const rows = await env.DB.prepare(`SELECT s.* FROM shipments s ${scope.where} ORDER BY s.etd DESC, s.id`)
     .bind(...scope.binds)
     .all<ShipmentRow>()
-  return json(await assemble(env, rows.results))
+  return json(await assemble(env, user, rows.results))
 }
 
 // Seed rows for the QuickBooks mock ledger: every shipment plus the party it is billed to (the shipper).
@@ -170,7 +216,7 @@ export async function fetchVisible(env: Env, user: SessionUser, id: string): Pro
 
 export async function getShipment(env: Env, user: SessionUser, id: string): Promise<Response> {
   const row = await fetchVisible(env, user, id)
-  const [shipment] = await assemble(env, [row])
+  const [shipment] = await assemble(env, user, [row])
   return json(shipment)
 }
 

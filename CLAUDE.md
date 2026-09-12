@@ -8,7 +8,9 @@ Tidelane is a container shipping management application. React 19 + Vite + Tailw
 
 Live: https://yigal.effi-mor-e04.workers.dev/
 
-Built for Yigal, who runs an ocean freight business in Los Angeles and is a long-standing friend of the owner's family. The owner is Effi Mor (Ephraim Mor), founder of RemitRix. The work is unpaid and there is no signed agreement. Yigal owns the delivered application outright; the underlying architecture patterns remain Effi's to reuse elsewhere.
+Built for Yigal, who runs an ocean freight business in Los Angeles and is a long-standing friend of the owner's family.
+
+**Yigal is a trader.** He buys from producers and manufacturers and sells to importers; he takes title, and his income is the margin between the two prices, not a fee on top of one of them. Every physical shipment therefore carries two commercial transactions with two different counterparties. Tidelane was built on the opposite assumption — an operator moving other people's cargo — and that mismatch is the single largest open item going into the visit. Read `docs/trader-model.md` before touching the domain model, the parties list, or anything to do with invoices. The owner is Effi Mor (Ephraim Mor), founder of RemitRix. The work is unpaid and there is no signed agreement. Yigal owns the delivered application outright; the underlying architecture patterns remain Effi's to reuse elsewhere.
 
 ## Read this before proposing anything
 
@@ -57,9 +59,15 @@ The worker imports `src/types.ts` and `src/data/constants.ts` directly, so clien
 
 Access control is two-axis and enforced in the API, never only in the UI: internal users see everything, partner users see only shipments where their org is a party.
 
+**Counterparty isolation, on top of that.** A partner user sees their own org's party rows plus the service providers (`forwarder`, `carrier`), and never another organization in a commercial role. Because Yigal is a trader, the producer and the importer are both parties to one shipment, and each learning the other is how he gets cut out of his own deal; the trade's own name for the same idea is the switch bill of lading. The rule lives in `seesParty` in `worker/shipments.ts` and also withholds comment authors and document uploaders belonging to a withheld counterparty. It does **not** filter comment prose, and it matches by author name because comments and documents carry no org link. Do not weaken it without reading `docs/trader-model.md`.
+
+**The entities the trader model is missing**, all of them session 4 decisions and none of them built: a `Trade` (a buy or sell leg attached to a shipment, with its own counterparty, incoterm and value), incoterm per leg rather than one column on the shipment, a supplier/customer axis distinct from the transport roles, and accounts payable beside the receivables QuickBooks already pulls. Without them there is no cost and no margin per shipment.
+
 **Note a gap:** seal numbers are central to Yigal's actual daily pain and are not obviously first-class in this model. Confirm where a seal number lives before building anything that reads or writes one.
 
-Other known-weak spots, unresolved: whether a shipment can carry containers for more than one consignee; what happens when a booking is rolled to a later vessel; whether a document belongs to a shipment or a container; whether an invoice can cover more than one shipment.
+Other known-weak spots, unresolved: whether a shipment can carry containers for more than one consignee; what happens when a booking is rolled to a later vessel; whether a document belongs to a shipment or a container; whether an invoice can cover more than one shipment. Three of those four are the trader question in disguise — see the last section of `docs/trader-model.md`.
+
+**The fork that governs the rest, and it is a session 1 question:** does Yigal match a buyer before the container moves (back-to-back, a trade hangs off the shipment, the model stays small), or does he buy into stock and sell later (a trade needs its own entity and a many-to-many to shipments, and margin becomes an allocation with a costing convention behind it)? Do not build the trade model before that is answered.
 
 ## Hard rules
 
@@ -93,12 +101,12 @@ Seven three-hour sessions, 07:00 to 10:00, 24 to 30 September, at Yigal's apartm
 
 | # | Date | Purpose |
 |---|---|---|
-| 1 | Thu 24 Sep | Shadow. Watch Yigal do the manual copying for real. **Count it and time it.** How many bookings a day, how many minutes each. That number decides how far Deckhand goes. Nothing on screen. |
+| 1 | Thu 24 Sep | Shadow. Watch Yigal do the manual copying for real. **Count it and time it.** How many bookings a day, how many minutes each. **Count the buy side and the sell side separately** — supplier emails and carrier emails are different formats. Also establish back-to-back or stock (see `docs/trader-model.md`). Nothing on screen. |
 | 2 | Fri 25 Sep | Deckhand v0 in his hands, same morning. Extraction only, no browser. He uses it that afternoon on real emails. |
 | 3 | Sat 26 Sep | Harden v0 against the ugly emails in his actual inbox. Decide from the session 1 numbers whether v1 is justified. |
-| 4 | Sun 27 Sep | Tidelane reality check: the model against his real records, and exception mining. Every "usually, except when". |
-| 5 | Mon 28 Sep | Real data in. Five to ten of his live shipments with real parties, real organizations, real roles. |
-| 6 | Tue 29 Sep | QuickBooks live against his real company. Pull, reconcile against a real shipment. |
+| 4 | Sun 27 Sep | Tidelane reality check. **Primary agenda: the trader model** — trade as an entity, incoterm per leg, supplier/customer axis, payables beside receivables. Then the rest of the model against his real records, and exception mining. Every "usually, except when". |
+| 5 | Mon 28 Sep | Real data in. Five to ten of his live shipments with real parties, real organizations, real roles, **and for each one the producer he bought from and the importer he sold to**. Counterparty isolation verified from a partner login before anything else is loaded. |
+| 6 | Tue 29 Sep | QuickBooks live against his real company. Pull, reconcile against a real shipment. **Decide receivables-only or receivables and payables**; if payables are out, the Invoices page has to say receivables rather than looking complete. |
 | 7 | Wed 30 Sep | Handover. He runs Deckhand alone, and books a real shipment and approves a real document alone. |
 | R1 | Fri 2 Oct | Reserve: Deckhand v1 if session 3 justified it, plus the security items below. |
 | R2 | Sat 3 Oct | Reserve: runbook, ownership transfer, close-out. |
@@ -106,21 +114,23 @@ Seven three-hour sessions, 07:00 to 10:00, 24 to 30 September, at Yigal's apartm
 ### Definition of done — Deckhand
 
 - [ ] Yigal uses it unassisted on a real inbound email and pastes the result into INTTRA
-- [ ] It handles the three most common email formats in his actual inbox
+- [ ] It handles the three most common email formats in his actual inbox, **counted per side** — supplier emails and carrier emails are different families, so this may be three each
 - [ ] Time per booking measured before and after, and written down
 - [ ] He knows what to do when it gets something wrong
 
 ### Definition of done — Tidelane
 
 - [ ] Yigal's admin account has a password only he knows; the four partner `.demo` accounts no longer exist in his environment
-- [ ] At least five of his real shipments in the database with his real parties
+- [ ] At least five of his real shipments in the database with his real parties, each carrying the producer he bought from and the importer he sold to
 - [ ] QuickBooks connected live; one invoice pull reconciles against a real shipment
 - [ ] He completes one real booking and one document approval unassisted
-- [ ] Written exception register: every case where his work does not fit the model, marked handled / out of scope / open
+- [ ] Written exception register: every case where his work does not fit the model, marked handled / out of scope / open — including whether the collaboration thread is ever used across counterparties, which counterparty isolation cannot protect
+- [ ] The trader model decided, in writing: back-to-back or stock, and whether trade, per-leg incoterm and payables are in or out
 - [ ] One-page runbook: adding a user, recovering a failed deploy, the migration-before-push rule, and the `CREDENTIALS_KEY` warning
 
 ### Security items that must close before any real shipment data is loaded
 
+- [ ] Verify counterparty isolation from a partner login on a shipment carrying both a producer and an importer; a trader's supplier and customer lists are the business, and a leak between them is worse than a leaked password
 - [ ] Remove the shared demo password from all seven accounts, and delete the four partner `.demo` accounts
 - [ ] Empty or close `/guide`, which currently lists demo accounts pre-login
 - [ ] `CREDENTIALS_KEY` generated properly, stored off Effi's laptop, known to a second person

@@ -487,6 +487,51 @@ test('every shipment party resolves to an organization', async ({ page }) => {
   await expect(page.getByText('Journey')).toBeVisible()
 })
 
+// Yigal trades as a principal: the producer he buys from and the importer he sells to are both
+// parties to one shipment, and each learning the other's name is how he gets cut out of his own
+// deal. The API, not the UI, is what has to withhold it.
+test('a partner never learns the other commercial counterparties on a shipment', async ({ page }) => {
+  type P = { role: string; name: string; contact: string }
+  type S = { id: string; parties: P[]; comments: { author: string }[]; documents: { uploadedBy: string }[] }
+  const fetchShipments = async (): Promise<S[]> =>
+    (await page.evaluate(`fetch('/api/shipments').then((r) => r.json())`)) as S[]
+
+  // Internal sees the whole party list, so the demo data really does put both sides on one shipment.
+  await login(page, 'yigal.tzfira@galco-intl.com')
+  const asInternal = await fetchShipments()
+  const both = asInternal.find(
+    (s) => s.parties.some((p) => p.name === 'Atlas Polymers Ltd') && s.parties.some((p) => p.role === 'consignee'),
+  )
+  expect(both).toBeTruthy()
+  const consigneeName = both!.parties.find((p) => p.role === 'consignee')!.name
+  const consigneeContact = asInternal.flatMap((s) => s.parties).find((p) => p.name === consigneeName)!.contact
+
+  await page.getByTestId('user-menu').click()
+  await page.getByRole('button', { name: 'Log out' }).click()
+
+  // The shipper on the same shipment gets itself and the service providers, and nobody else.
+  await login(page, 'dana@atlaspolymers.demo')
+  const asPartner = await fetchShipments()
+  expect(asPartner.length).toBeGreaterThan(0)
+  const mine = asPartner.find((s) => s.id === both!.id)
+  expect(mine).toBeTruthy()
+  expect(mine!.parties.some((p) => p.name === 'Atlas Polymers Ltd')).toBe(true)
+  expect(mine!.parties.some((p) => p.role === 'forwarder' || p.role === 'carrier')).toBe(true)
+  for (const s of asPartner) {
+    expect(s.parties.some((p) => p.role === 'consignee')).toBe(false)
+    expect(s.parties.some((p) => p.name === consigneeName)).toBe(false)
+    // The structured doors next to the party list: comment authors and document uploaders.
+    expect(s.comments.some((c) => c.author === consigneeContact)).toBe(false)
+    expect(s.documents.some((d) => d.uploadedBy === consigneeContact)).toBe(false)
+  }
+
+  // And not through the detail endpoint either.
+  const detail = (await page.evaluate(
+    `fetch('/api/shipments/${both!.id}').then((r) => r.json())`,
+  )) as S
+  expect(detail.parties.some((p) => p.role === 'consignee')).toBe(false)
+})
+
 test('shipment map marks every port of call and expands one with its ETA', async ({ page }) => {
   await login(page, 'effi.mor@galco-intl.com')
   // s36 is seeded mid-voyage: Busan → Singapore (transshipment) → Antwerp.

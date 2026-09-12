@@ -40,9 +40,9 @@ const PERMISSIONS: { action: string; admin: boolean; ops: boolean; viewer: boole
 
 const ORG_SCOPES = [
   { type: 'internal', label: 'Tidelane', sees: 'Every shipment in the network' },
-  { type: 'shipper', label: 'Exporter', sees: 'Only shipments they are a party to' },
+  { type: 'shipper', label: 'Exporter / producer', sees: 'Only shipments they are a party to, and not the other commercial counterparties on them' },
   { type: 'forwarder', label: 'Freight forwarder', sees: 'Only the shipments they forward' },
-  { type: 'consignee', label: 'Importer', sees: 'Only their inbound shipments' },
+  { type: 'consignee', label: 'Importer / buyer', sees: 'Only their inbound shipments, and not who the goods were bought from' },
   { type: 'carrier', label: 'Ocean carrier', sees: 'Only the shipments they carry' },
 ]
 
@@ -180,9 +180,9 @@ export default function GuidePage() {
           <CardHeader title="What is Tidelane?" />
           <div className="space-y-3 px-5 pb-5 text-[13px] leading-relaxed text-slate-600">
             <p>
-              Tidelane is a demo of a container shipping management platform for large-volume shippers — the kind of
-              system that connects exporters, importers, forwarders and ocean carriers in one place: booking
-              operations, door-to-door tracking, document workflows, collaboration and reporting.
+              Tidelane is a demo of a container shipping management platform for traders and large-volume shippers —
+              the kind of system that connects producers, importers, forwarders and ocean carriers in one place:
+              booking operations, door-to-door tracking, document workflows, collaboration and reporting.
             </p>
             <p>
               The analogy: think of it as a <strong className="font-semibold text-slate-700">port control tower</strong>.
@@ -278,6 +278,12 @@ export default function GuidePage() {
             <p className="mt-3 text-[12px] text-slate-500">
               Internal users see the whole network. Partner users — shippers, forwarders, consignees, carriers — only
               see shipments where their company is a party, each from their own perspective.
+            </p>
+            <p className="mt-2 text-[12px] text-slate-500">
+              On top of that, a partner sees their own company and the service providers on a shipment, never another
+              company in a commercial role. A trader buys from a producer and sells to an importer, and both are
+              parties to the same shipment; showing either one the other is how a trader gets cut out of his own deal.
+              The rule covers comment authors and document uploaders too, but it cannot filter the text of a comment.
             </p>
             <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
               All seven accounts share one password while this is a demo. That has to end before any real shipment data
