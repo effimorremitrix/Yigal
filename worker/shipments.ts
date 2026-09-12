@@ -1,6 +1,7 @@
 import { HttpError, json, type Env, type SessionUser } from './env'
 import { PORTS } from '../src/data/constants'
-import type { Milestone, Shipment } from '../src/types'
+import type { BusinessProfile, Milestone, Shipment } from '../src/types'
+import { deriveEconomics, readBusinessProfile } from './business'
 import type { InvoiceSeed } from './integrations/quickbooks/mock'
 import { validateBooking, type BookingPayload } from './booking'
 
@@ -27,7 +28,46 @@ export interface ShipmentRow {
   on_time: number
   progress: number
   delay_reason: string | null
+  deal_value_usd: number | null
+  commission_rate_pct: number | null
 }
+
+// Counterparty isolation. Yigal trades as a principal: he buys from producers and sells to
+// importers, so on one physical shipment the supplier and the customer are both parties and
+// neither is supposed to learn the other exists. The supplier list and the customer list are
+// the business; handing one to the other is how a trader gets cut out of his own deal. It is
+// the same reason the trade uses a switch bill of lading and a neutral packing list.
+//
+// So a partner user sees their own organization's party rows plus the service providers, and
+// never another commercial counterparty. Carrier and forwarder stay visible on purpose: the
+// carrier and vessel are already on the shipment record and on the bill of lading, and a
+// forwarder cannot do the job blind.
+//
+// 'shipper' and 'consignee' are transport roles off the bill of lading, which is all the model
+// carries today, and they are the two that can hold a commercial counterparty. The separate
+// supplier/customer axis is a session 4 decision; see docs/trader-model.md.
+//
+// The rule applies in trader mode only. In operator mode the internal organization is moving
+// other people's cargo, and the shipper and consignee on one bill of lading already know each
+// other, so withholding either would break the collaboration the model exists for. That makes
+// the business-model switch an access-control decision, which is why only an internal admin can
+// write it and why it is read here, server-side, on every request.
+const SERVICE_ROLES = new Set(['forwarder', 'carrier'])
+
+interface PartyRow {
+  shipment_id: string
+  id: string
+  org_id: number
+  name: string
+  role: string
+  contact: string
+}
+
+const seesParty = (user: SessionUser, profile: BusinessProfile, p: PartyRow): boolean =>
+  profile.model !== 'trader' ||
+  user.orgType === 'internal' ||
+  p.org_id === user.orgId ||
+  SERVICE_ROLES.has(p.role)
 
 // Internal-org users see everything; partner users only shipments where their org is a party.
 const scopeClause = (user: SessionUser): { where: string; binds: unknown[] } =>
@@ -35,7 +75,7 @@ const scopeClause = (user: SessionUser): { where: string; binds: unknown[] } =>
     ? { where: '', binds: [] }
     : { where: 'WHERE EXISTS (SELECT 1 FROM shipment_parties sp WHERE sp.shipment_id = s.id AND sp.org_id = ?)', binds: [user.orgId] }
 
-async function assemble(env: Env, rows: ShipmentRow[]): Promise<Shipment[]> {
+async function assemble(env: Env, user: SessionUser, profile: BusinessProfile, rows: ShipmentRow[]): Promise<Shipment[]> {
   if (rows.length === 0) return []
   const ids = rows.map((r) => r.id)
   const ph = ids.map(() => '?').join(',')
@@ -61,9 +101,22 @@ async function assemble(env: Env, rows: ShipmentRow[]): Promise<Shipment[]> {
   const mByS = group<{ shipment_id: string; key: string; label: string; location: string; planned: string; actual: string | null; status: string }>(milestones)
   const dByS = group<{ shipment_id: string; id: string; type: string; name: string; status: string; uploaded_by: string; updated_at: string }>(documents)
   const comByS = group<{ shipment_id: string; id: string; author: string; role: string; text: string; at: string }>(comments)
-  const pByS = group<{ shipment_id: string; id: string; name: string; role: string; contact: string }>(parties)
+  const pByS = group<PartyRow>(parties)
 
-  return rows.map((r) => ({
+  return rows.map((r) => {
+    const allParties = pByS.get(r.id) ?? []
+    const visibleParties = allParties.filter((p) => seesParty(user, profile, p))
+    // Comments and documents carry a plain author name, not an organization, so a withheld
+    // counterparty is recognised by the contact name on the party row we just withheld. This is
+    // a name match because the schema gives nothing better; making the link structural is a
+    // session 4 item. It closes the structured doors only: comment text is free prose and a
+    // sentence naming the other side cannot be filtered, which is why the exception register
+    // has to say whether the collaboration thread is used across counterparties at all.
+    const hidden = new Set(
+      allParties.filter((p) => !seesParty(user, profile, p)).flatMap((p) => [p.contact, p.name]),
+    )
+
+    return {
     id: r.id,
     bookingRef: r.booking_ref,
     origin: PORTS[r.origin_code],
@@ -83,6 +136,7 @@ async function assemble(env: Env, rows: ShipmentRow[]): Promise<Shipment[]> {
     onTime: r.on_time === 1,
     progress: r.progress,
     delayReason: r.delay_reason ?? undefined,
+    ...deriveEconomics(profile, r),
     containers: (cByS.get(r.id) ?? []).map((c) => ({
       number: c.number,
       type: c.type as Shipment['containers'][number]['type'],
@@ -99,38 +153,57 @@ async function assemble(env: Env, rows: ShipmentRow[]): Promise<Shipment[]> {
       actual: m.actual ?? undefined,
       status: m.status as Milestone['status'],
     })),
-    documents: (dByS.get(r.id) ?? []).map((d) => ({
-      id: d.id,
-      type: d.type as Shipment['documents'][number]['type'],
-      name: d.name,
-      status: d.status as Shipment['documents'][number]['status'],
-      uploadedBy: d.uploaded_by,
-      updatedAt: d.updated_at,
-    })),
-    comments: (comByS.get(r.id) ?? []).map((c) => ({ id: c.id, author: c.author, role: c.role, text: c.text, at: c.at })),
-    parties: (pByS.get(r.id) ?? []).map((p) => ({
+    documents: (dByS.get(r.id) ?? [])
+      .filter((d) => !hidden.has(d.uploaded_by))
+      .map((d) => ({
+        id: d.id,
+        type: d.type as Shipment['documents'][number]['type'],
+        name: d.name,
+        status: d.status as Shipment['documents'][number]['status'],
+        uploadedBy: d.uploaded_by,
+        updatedAt: d.updated_at,
+      })),
+    comments: (comByS.get(r.id) ?? [])
+      .filter((c) => !hidden.has(c.author))
+      .map((c) => ({ id: c.id, author: c.author, role: c.role, text: c.text, at: c.at })),
+    parties: visibleParties.map((p) => ({
       id: p.id,
       name: p.name,
       role: p.role as Shipment['parties'][number]['role'],
       contact: p.contact,
     })),
-  }))
+    }
+  })
 }
 
 export async function listShipments(env: Env, user: SessionUser): Promise<Response> {
   const scope = scopeClause(user)
-  const rows = await env.DB.prepare(`SELECT s.* FROM shipments s ${scope.where} ORDER BY s.etd DESC, s.id`)
-    .bind(...scope.binds)
-    .all<ShipmentRow>()
-  return json(await assemble(env, rows.results))
+  const [profile, rows] = await Promise.all([
+    readBusinessProfile(env),
+    env.DB.prepare(`SELECT s.* FROM shipments s ${scope.where} ORDER BY s.etd DESC, s.id`)
+      .bind(...scope.binds)
+      .all<ShipmentRow>(),
+  ])
+  return json(await assemble(env, user, profile, rows.results))
 }
 
-// Seed rows for the QuickBooks mock ledger: every shipment plus the party it is billed to (the shipper).
+// Seed rows for the QuickBooks mock ledger, one per shipment.
+//
+// Who the invoice is addressed to depends on the business model, because the two models bill in
+// opposite directions. In operator mode the internal org sells freight to the shipper. In trader
+// mode Yigal sells goods to the importer, so the customer is the consignee and the invoice is the
+// deal value; the freight is already inside that number, which is why no surcharge is added to it.
+// `dealValueUsd` is non-null only in trader mode, so the adapter can read presence as the mode
+// rather than being told it twice.
+//
 // No org scoping: the invoices endpoints are internal-only and gate before calling this.
 export async function loadInvoiceSeeds(env: Env): Promise<InvoiceSeed[]> {
+  const profile = await readBusinessProfile(env)
   const rows = await env.DB.prepare(
     `SELECT s.id, s.booking_ref, s.status, s.etd, s.eta, s.origin_code, s.destination_code, s.incoterm, s.freight_cost_usd,
-            (SELECT p.name FROM shipment_parties p WHERE p.shipment_id = s.id AND p.role = 'shipper' ORDER BY p.id LIMIT 1) AS shipper_name
+            s.deal_value_usd, s.commission_rate_pct,
+            (SELECT p.name FROM shipment_parties p WHERE p.shipment_id = s.id AND p.role = 'shipper' ORDER BY p.id LIMIT 1) AS shipper_name,
+            (SELECT p.name FROM shipment_parties p WHERE p.shipment_id = s.id AND p.role = 'consignee' ORDER BY p.id LIMIT 1) AS consignee_name
      FROM shipments s ORDER BY s.etd DESC, s.id`,
   ).all<{
     id: string
@@ -142,20 +215,28 @@ export async function loadInvoiceSeeds(env: Env): Promise<InvoiceSeed[]> {
     destination_code: string
     incoterm: string
     freight_cost_usd: number
+    deal_value_usd: number | null
+    commission_rate_pct: number | null
     shipper_name: string | null
+    consignee_name: string | null
   }>()
-  return rows.results.map((r) => ({
-    shipmentId: r.id,
-    bookingRef: r.booking_ref,
-    status: r.status,
-    etd: r.etd,
-    eta: r.eta,
-    originCode: r.origin_code,
-    destinationCode: r.destination_code,
-    incoterm: r.incoterm,
-    freightCostUsd: r.freight_cost_usd,
-    shipperName: r.shipper_name,
-  }))
+  return rows.results.map((r) => {
+    const economics = deriveEconomics(profile, r)
+    return {
+      shipmentId: r.id,
+      bookingRef: r.booking_ref,
+      status: r.status,
+      etd: r.etd,
+      eta: r.eta,
+      originCode: r.origin_code,
+      destinationCode: r.destination_code,
+      incoterm: r.incoterm,
+      freightCostUsd: r.freight_cost_usd,
+      shipperName: r.shipper_name,
+      dealValueUsd: economics.dealValueUsd ?? null,
+      consigneeName: r.consignee_name,
+    }
+  })
 }
 
 export async function fetchVisible(env: Env, user: SessionUser, id: string): Promise<ShipmentRow> {
@@ -170,7 +251,7 @@ export async function fetchVisible(env: Env, user: SessionUser, id: string): Pro
 
 export async function getShipment(env: Env, user: SessionUser, id: string): Promise<Response> {
   const row = await fetchVisible(env, user, id)
-  const [shipment] = await assemble(env, [row])
+  const [shipment] = await assemble(env, user, await readBusinessProfile(env), [row])
   return json(shipment)
 }
 
@@ -252,8 +333,8 @@ export async function createShipment(env: Env, user: SessionUser, payload: Booki
     const stmts: D1PreparedStatement[] = []
     stmts.push(
       env.DB.prepare(
-        `INSERT INTO shipments (id, booking_ref, origin_code, destination_code, via_code, lane_id, carrier_name, carrier_scac, vessel_name, vessel_imo, vessel_voyage, status, etd, eta, atd, incoterm, commodity, co2_tons, freight_cost_usd, on_time, progress, delay_reason, created_by, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'booking_confirmed', ?, ?, NULL, ?, ?, ?, ?, 1, 0, NULL, ?, ?)`,
+        `INSERT INTO shipments (id, booking_ref, origin_code, destination_code, via_code, lane_id, carrier_name, carrier_scac, vessel_name, vessel_imo, vessel_voyage, status, etd, eta, atd, incoterm, commodity, co2_tons, freight_cost_usd, deal_value_usd, on_time, progress, delay_reason, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'booking_confirmed', ?, ?, NULL, ?, ?, ?, ?, ?, 1, 0, NULL, ?, ?)`,
       ).bind(
         id,
         bookingRef,
@@ -272,6 +353,7 @@ export async function createShipment(env: Env, user: SessionUser, payload: Booki
         booking.commodity,
         Math.round(booking.totalTeu * sched.co2PerTeuTons * 10) / 10,
         booking.totalTeu * sched.costPerTeuUsd,
+        booking.dealValueUsd,
         user.id,
         now,
       ),

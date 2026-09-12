@@ -15,6 +15,10 @@ export interface BookingPayload {
   incoterm: string
   commodity: string
   weightKg: number
+  // Trader mode only, and optional even there: the all-in price the importer is invoiced. A
+  // booking made without one is legitimate and reads as not set; it is never inferred from the
+  // freight cost, because inventing a customer's price is worse than showing a blank.
+  dealValueUsd?: number
   containers: Partial<Record<string, number>>
   schedule: {
     carrier: string
@@ -37,6 +41,7 @@ export interface ValidatedBooking {
   incoterm: Incoterm
   commodity: string
   weightKg: number
+  dealValueUsd: number | null
   containers: { type: ContainerType; count: number }[]
   totalContainers: number
   totalTeu: number
@@ -54,6 +59,8 @@ export interface ValidatedBooking {
 }
 
 const MAX_CONTAINERS = 50
+// A sanity ceiling on one deal, not a commercial rule.
+const MAX_DEAL_VALUE_USD = 500_000_000
 // A 40ft box tops out around 30.5 t of payload; the ceiling is a sanity bound, not a rule.
 const MAX_WEIGHT_KG = 45_000
 const MAX_TRANSIT_DAYS = 120
@@ -85,6 +92,16 @@ const timestamp = (value: unknown, field: string): string => {
   const parsed = new Date(raw)
   if (Number.isNaN(parsed.getTime())) bad(`${field} must be an ISO date`)
   return parsed.toISOString()
+}
+
+// Absent, null and empty all mean "not set". Anything else has to be a sane positive amount,
+// so a typo cannot land a negative or absurd price in the ledger.
+function dealValue(raw: unknown): number | null {
+  if (raw === undefined || raw === null || raw === '') return null
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) bad('Deal value must be a number')
+  const v = raw as number
+  if (v <= 0 || v > MAX_DEAL_VALUE_USD) bad('Deal value must be between 1 and 500,000,000')
+  return Math.round(v)
 }
 
 export function validateBooking(payload: BookingPayload): ValidatedBooking {
@@ -122,6 +139,7 @@ export function validateBooking(payload: BookingPayload): ValidatedBooking {
     incoterm,
     commodity: text(payload.commodity, 'Commodity', 120),
     weightKg: number(payload.weightKg, 'Container weight', 1, MAX_WEIGHT_KG),
+    dealValueUsd: dealValue(payload.dealValueUsd),
     containers,
     totalContainers,
     // 20ft boxes are 1 TEU, everything larger counts as 2.

@@ -1,9 +1,16 @@
 import { hashPassword } from './auth'
+import { readBusinessProfile } from './business'
 import { HttpError, json, type Env, type SessionUser } from './env'
 
+// The business profile rides along here so every page has the model on first paint and no screen
+// has to flicker between the two vocabularies. It is not authorization: counterparty isolation is
+// decided server-side in worker/shipments.ts and never from what the client was told.
 export async function getMe(env: Env, user: SessionUser): Promise<Response> {
-  const settings = await env.DB.prepare('SELECT * FROM user_settings WHERE user_id = ?').bind(user.id).first()
-  return json({ user, settings })
+  const [settings, business] = await Promise.all([
+    env.DB.prepare('SELECT * FROM user_settings WHERE user_id = ?').bind(user.id).first(),
+    readBusinessProfile(env),
+  ])
+  return json({ user, settings, business })
 }
 
 export async function updateProfile(env: Env, user: SessionUser, body: { name?: string; title?: string }): Promise<Response> {

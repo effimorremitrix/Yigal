@@ -4,7 +4,7 @@ import { ArrowLeft, ArrowRight, Check, CheckCircle2, Leaf, Minus, Plus, Ship } f
 import { useData } from '../context/DataContext'
 import { useAuth } from '../context/AuthContext'
 import { Card } from '../components/ui/Card'
-import { Select } from '../components/ui/inputs'
+import { inputCls, Select } from '../components/ui/inputs'
 import { apiFetch } from '../lib/api'
 import { CONTAINER_TYPES, INCOTERMS, LANES, PORTS } from '../data/constants'
 import { addDays, fmtDate, iso, TODAY } from '../data/random'
@@ -21,7 +21,7 @@ const CONTAINER_INFO: Record<string, string> = {
 
 export default function BookingPage() {
   const { createBooking } = useData()
-  const { canWrite } = useAuth()
+  const { canWrite, vocabulary, business } = useAuth()
   const navigate = useNavigate()
 
   const [step, setStep] = useState(0)
@@ -32,6 +32,9 @@ export default function BookingPage() {
   const [quantities, setQuantities] = useState<Record<string, number>>({ '20DV': 0, '40DV': 2, '40HC': 0, '40RF': 0 })
   const [commodity, setCommodity] = useState('Auto parts')
   const [weight, setWeight] = useState('18')
+  // Trader mode only, and optional: the all-in price the importer is invoiced. Left blank it is
+  // simply not set on the shipment; it is never guessed from the freight cost.
+  const [dealValue, setDealValue] = useState('')
   const [selected, setSelected] = useState<SailingSchedule | null>(null)
   const [createdId, setCreatedId] = useState<string | null>(null)
   const [submitError, setSubmitError] = useState('')
@@ -82,6 +85,8 @@ export default function BookingPage() {
         incoterm,
         commodity,
         weightKg: Number(weight) * 1000,
+        // Blank stays blank: undefined tells the worker "not set" rather than zero.
+        dealValueUsd: dealValue.trim() === '' ? undefined : Number(dealValue),
         containers: quantities,
         schedule: {
           carrier: selected.carrier,
@@ -204,6 +209,26 @@ export default function BookingPage() {
         {step === 1 && (
           <div className="space-y-5">
             <h2 className="text-[15px] font-semibold text-slate-900">What are you shipping?</h2>
+            {vocabulary.showsCommission && (
+              <label className="block max-w-sm">
+                <span className="mb-1.5 block text-[12px] font-medium text-slate-500">
+                  Deal value (USD, optional)
+                </span>
+                <input
+                  value={dealValue}
+                  onChange={(e) => setDealValue(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="e.g. 154000"
+                  className={inputCls}
+                  data-testid="deal-value"
+                />
+                <span className="mt-1.5 block text-[12px] text-slate-500">
+                  The all-in price invoiced to the importer, covering goods, freight, insurance and duty. Your{' '}
+                  {business?.commissionRatePct ?? 2}% commission comes out of what the producer receives. Leave blank
+                  if the price is not agreed yet.
+                </span>
+              </label>
+            )}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {CONTAINER_TYPES.map((t) => (
                 <div key={t} className={`flex items-center justify-between rounded-lg border p-4 ${quantities[t] > 0 ? 'border-brand-600 bg-brand-50/40' : 'border-slate-200'}`}>
@@ -335,6 +360,9 @@ export default function BookingPage() {
                   ['ETD', fmtDate(selected.etd)],
                   ['ETA', fmtDate(selected.eta)],
                   ['Est. freight', `$${(totalTeu * selected.costPerTeuUsd).toLocaleString()}`],
+                  ...(vocabulary.showsCommission
+                    ? ([['Deal value', dealValue ? `$${Number(dealValue).toLocaleString()}` : 'Not set']] as [string, string][])
+                    : []),
                 ] as [string, string][]
               ).map(([k, v]) => (
                 <div key={k}>

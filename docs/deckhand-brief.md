@@ -10,12 +10,29 @@ Shipment IDs and seal IDs arrive by email. He retypes them into INTTRA. Every ti
 
 Everything below is a response to that sentence and nothing more. If a design decision does not make that sentence less true, it does not belong here.
 
+## The intake has two sides
+
+Yigal is a trader: he buys from producers and sells to importers, so the emails arrive from two
+different directions and they do not look alike.
+
+| | Buy side | Sell side |
+|---|---|---|
+| Sender | the producer, or the producer's forwarder | his own carrier or forwarder |
+| Typical document | booking confirmation, packing list, mill certificate | booking confirmation, arrival notice, draft B/L |
+| Format follows | the producer's country and house style | the carrier |
+
+The mechanism is unaffected — text in, paste-ready block out — but "the three most common email
+formats in his actual inbox" may mean three per side, which is six. Count them separately in
+session 1, or v0 ships against half the corpus and looks broken on the first real email from the
+other direction. Background in `docs/trader-model.md`.
+
 ## The number that governs the whole design
 
 Measured in session 1 (Thu 24 Sep), before anything is built:
 
 - How many of these does he do per day?
 - How many minutes does each one take, door to door?
+- **How do those split between buy side and sell side?**
 - How often does he get one wrong, and what happens when he does?
 
 Rough guide: five a day at two minutes is about 160 hours a year and justifies v1. Two a week means v0 is the entire product and nobody should touch a browser.
@@ -86,6 +103,7 @@ The reason v2 waits: it is a new module, and the visit exists to make what alrea
 ## Open questions
 
 - Where does a seal number live in the Tidelane domain model? It may not be first-class today. Confirm before building anything that reads or writes one.
-- Do the emails come from a predictable set of senders, or from anyone?
+- Do the emails come from a predictable set of senders, or from anyone? Ask per side; the producers are probably a stable short list and the carriers definitely are.
+- Does the same container ever arrive described twice, once by the producer and once by the carrier, with the two descriptions disagreeing? That is the trader's version of a conflict, and Deckhand should flag it rather than pick one.
 - Is there a variant where the IDs arrive as an image or a scan rather than text?
 - What does INTTRA do on a duplicate submission, and how would he recover?

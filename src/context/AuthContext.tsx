@@ -1,5 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { apiFetch, setUnauthorizedHandler } from '../lib/api'
+import { vocabularyFor, type Vocabulary } from '../lib/vocabulary'
+import type { BusinessProfile } from '../types'
 
 export type Role = 'admin' | 'ops' | 'viewer'
 
@@ -27,6 +29,11 @@ interface AuthContextValue {
   status: 'loading' | 'anon' | 'authed'
   user: AuthUser | null
   settings: UserSettings | null
+  // The deployment's business model, and the wording that goes with it. Presentation only:
+  // counterparty isolation is decided in the worker and never from anything the client holds.
+  business: BusinessProfile | null
+  vocabulary: Vocabulary
+  saveBusiness: (b: Partial<BusinessProfile>) => Promise<void>
   canWrite: boolean
   isAdmin: boolean
   isInternal: boolean // member of the internal (Tidelane) organization, as opposed to a partner org
@@ -43,17 +50,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<'loading' | 'anon' | 'authed'>('loading')
   const [user, setUser] = useState<AuthUser | null>(null)
   const [settings, setSettings] = useState<UserSettings | null>(null)
+  const [business, setBusiness] = useState<BusinessProfile | null>(null)
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
       setUser(null)
       setSettings(null)
+      setBusiness(null)
       setStatus('anon')
     })
-    apiFetch<{ user: AuthUser; settings: UserSettings }>('/api/auth/me')
+    apiFetch<{ user: AuthUser; settings: UserSettings; business: BusinessProfile }>('/api/auth/me')
       .then((d) => {
         setUser(d.user)
         setSettings(d.settings)
+        setBusiness(d.business)
         setStatus('authed')
       })
       .catch(() => setStatus('anon'))
@@ -62,9 +72,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     await apiFetch<{ user: AuthUser }>('/api/auth/login', { method: 'POST', json: { email, password } })
-    const me = await apiFetch<{ user: AuthUser; settings: UserSettings }>('/api/auth/me')
+    const me = await apiFetch<{ user: AuthUser; settings: UserSettings; business: BusinessProfile }>('/api/auth/me')
     setUser(me.user)
     setSettings(me.settings)
+    setBusiness(me.business)
     setStatus('authed')
     return me.user
   }, [])
@@ -73,6 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await apiFetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined)
     setUser(null)
     setSettings(null)
+    setBusiness(null)
     setStatus('anon')
   }, [])
 
@@ -95,6 +107,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [settings],
   )
 
+  const saveBusiness = useCallback(async (patch: Partial<BusinessProfile>) => {
+    const updated = await apiFetch<BusinessProfile>('/api/business', { method: 'PUT', json: patch })
+    setBusiness(updated)
+  }, [])
+
   const saveProfile = useCallback(async (p: { name: string; title: string }) => {
     const updated = await apiFetch<AuthUser>('/api/me/profile', { method: 'PUT', json: p })
     setUser(updated)
@@ -105,6 +122,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       status,
       user,
       settings,
+      business,
+      vocabulary: vocabularyFor(business?.model),
+      saveBusiness,
       canWrite: user?.role === 'admin' || user?.role === 'ops',
       isAdmin: user?.role === 'admin',
       isInternal: user?.orgType === 'internal',
@@ -114,7 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       saveSettings,
       saveProfile,
     }),
-    [status, user, settings, login, logout, saveSettings, saveProfile],
+    [status, user, settings, business, login, logout, saveSettings, saveBusiness, saveProfile],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -12,7 +12,7 @@ const DEMO_ACCOUNTS = [
 ]
 
 export default function LoginPage() {
-  const { status, login, landingPage } = useAuth()
+  const { status, login, landingPage, vocabulary } = useAuth()
   const navigate = useNavigate()
   const [email, setEmail] = useState('yigal.tzfira@galco-intl.com')
   const [password, setPassword] = useState('')
@@ -56,8 +56,8 @@ export default function LoginPage() {
             container shipping.
           </h1>
           <p className="mt-3 max-w-sm text-[13px] leading-relaxed text-slate-400">
-            Bookings, tracking, documents and analytics for large-volume shippers — connected with your forwarders,
-            carriers and consignees on one platform.
+            Bookings, tracking, documents and analytics for {vocabulary.audience} — connected with your forwarders,
+            carriers and counterparties on one platform.
           </p>
         </div>
         <div className="text-[11px] text-slate-500">Demo environment · all data simulated</div>
