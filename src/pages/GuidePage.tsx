@@ -18,13 +18,15 @@ import { useAuth } from '../context/AuthContext'
 import { roleLabel, type Vocabulary } from '../lib/vocabulary'
 import { Card, CardHeader } from '../components/ui/Card'
 
-const ACCOUNTS = [
-  { email: 'yigal.tzfira@galco-intl.com', role: 'Admin', org: 'Tidelane (internal)', sees: 'Everything, plus user management, integrations (incl. QuickBooks), invoices and Deckhand' },
+// The partner organizations are labelled by the business model, not by the transport role stored
+// against them, so this table and the one above cannot disagree about what a `shipper` is called.
+const accounts = (v: Vocabulary) => [
+  { email: 'yigal.tzfira@galco-intl.com', role: 'Admin', org: 'Tidelane (internal)', sees: 'Everything, plus user management, integrations (incl. QuickBooks), invoices, Deckhand and the business model' },
   { email: 'effi.mor@galco-intl.com', role: 'Operations', org: 'Tidelane (internal)', sees: 'All shipments, invoices and Deckhand; can book, approve documents, comment' },
   { email: 'ben.mor@galco-intl.com', role: 'Viewer', org: 'Tidelane (internal)', sees: 'All shipments, read-only' },
-  { email: 'dana@atlaspolymers.demo', role: 'Operations', org: 'Atlas Polymers (shipper)', sees: 'Only shipments where Atlas Polymers is a party' },
+  { email: 'dana@atlaspolymers.demo', role: 'Operations', org: `Atlas Polymers (${roleLabel(v, 'shipper').toLowerCase()})`, sees: 'Only shipments where Atlas Polymers is a party' },
   { email: 'amit@globalfreight.demo', role: 'Operations', org: 'GlobalFreight Partners (forwarder)', sees: 'Only shipments they forward' },
-  { email: 'pieter@northline.demo', role: 'Viewer', org: 'Northline Imports (consignee)', sees: 'Their inbound shipments, read-only' },
+  { email: 'pieter@northline.demo', role: 'Viewer', org: `Northline Imports (${roleLabel(v, 'consignee').toLowerCase()})`, sees: 'Their inbound shipments, read-only' },
   { email: 'desk@meridianline.demo', role: 'Operations', org: 'Meridian Line (carrier)', sees: 'Shipments carried by Meridian Line' },
 ]
 
@@ -37,6 +39,7 @@ const PERMISSIONS: { action: string; admin: boolean; ops: boolean; viewer: boole
   { action: 'Pull and view QuickBooks invoices (internal org only)', admin: true, ops: true, viewer: false },
   { action: 'Use Deckhand extraction (internal org only)', admin: true, ops: true, viewer: false },
   { action: 'Manage users & organizations', admin: true, ops: false, viewer: false },
+  { action: 'Switch the business model (internal admin only)', admin: true, ops: false, viewer: false },
 ]
 
 // Labels come from the business model rather than being written twice; `sees` is the access rule,
@@ -61,7 +64,7 @@ const orgScopes = (v: Vocabulary) => [
   { type: 'carrier', label: roleLabel(v, 'carrier'), sees: 'Only the shipments they carry' },
 ]
 
-const MODULES = [
+const modules = (v: Vocabulary) => [
   {
     icon: LayoutDashboard,
     name: 'Dashboard (Control Tower)',
@@ -70,12 +73,18 @@ const MODULES = [
   {
     icon: Ship,
     name: 'Shipments',
-    text: 'Search and filter every shipment your organization can see. Click a row for the full journey: a route map of the ports the vessel is due to call at — click one for its country, its role in the route (load, transship, discharge), its ETA or ETD, the days remaining, and the milestones that happen there — plus the milestone timeline (planned vs actual), containers with seal numbers and D&D exposure, documents, parties and the collaboration thread.',
+    text: `Search and filter every shipment your organization can see. Click a row for the full journey: a route map of the ports the vessel is due to call at — click one for its country, its role in the route (load, transship, discharge), its ETA or ETD, the days remaining, and the milestones that happen there — plus the milestone timeline (planned vs actual), containers with seal numbers and D&D exposure, documents, parties and the collaboration thread.${
+      v.showsCommission
+        ? ' The facts panel also carries the money: deal value, commission rate, your commission and what the producer receives.'
+        : ' The facts panel carries the freight cost for the shipment.'
+    }`,
   },
   {
     icon: CalendarPlus,
     name: 'New Booking',
-    text: 'Four steps: route & incoterm → containers & cargo → pick a sailing (price, transit time, CO₂ per option) → confirm. Like booking a flight, but for a container. The booking is saved to the database with a TL-2026-#### reference — it stays after you reload, and other users of your org see it too.',
+    text: `Four steps: route & incoterm → containers & cargo${
+      v.showsCommission ? ' (and the deal value, if the price is agreed)' : ''
+    } → pick a sailing (price, transit time, CO₂ per option) → confirm. Like booking a flight, but for a container. The booking is saved to the database with a TL-2026-#### reference — it stays after you reload, and other users of your org see it too.`,
   },
   {
     icon: Map,
@@ -90,7 +99,11 @@ const MODULES = [
   {
     icon: Receipt,
     name: 'Invoices',
-    text: 'Customer invoices pulled from QuickBooks Online, each linked to the shipment it bills by the TL-2026-#### reference found in the doc number, memo or line items. Status (open, overdue, paid, void) is derived at read time. Re-pulling updates existing invoices instead of duplicating them. Internal admin/ops only; partner organizations never see finance data.',
+    text: `Customer invoices pulled from QuickBooks Online, each linked to the shipment it bills by the TL-2026-#### reference found in the doc number, memo or line items. ${
+      v.showsCommission
+        ? 'The customer is the importer and the invoice is the deal value; your commission is not on it, because it comes out of the producer\u2019s side and is not the importer\u2019s business. '
+        : 'The customer is the shipper and the invoice is the freight. '
+    }Status (open, overdue, paid, void) is derived at read time. Re-pulling updates existing invoices instead of duplicating them. Internal admin/ops only; partner organizations never see finance data.`,
   },
   {
     icon: Wand2,
@@ -100,12 +113,16 @@ const MODULES = [
   {
     icon: BarChart3,
     name: 'Analytics',
-    text: 'TEU volume by month, carrier allocation, on-time performance against a 90% target, and CO₂ by trade lane — computed live from the shipments your organization can see.',
+    text: `TEU volume by month, carrier allocation, on-time performance against a 90% target, and CO₂ by trade lane — computed live from the shipments your organization can see. The headline tiles follow the business model: ${
+      v.showsCommission
+        ? 'deal value invoiced, commission earned, and the effective rate across the whole book, which moves if any shipment carries its own rate'
+        : 'freight spend and average cost per TEU'
+    }.`,
   },
   {
     icon: Settings,
     name: 'Settings',
-    text: 'Profile (name, title), preferences (timezone, date format, landing page, notification toggles) — all saved per user. Admins also manage users here (invite, change role or organization, deactivate) and the external connectors: CBP ACE customs, E2open INTTRA and Intuit QuickBooks, each with mock/live mode, encrypted credentials and a connection test.',
+    text: 'Profile (name, title), preferences (timezone, date format, landing page, notification toggles) — all saved per user. Admins also manage users here (invite, change role or organization, deactivate) and the external connectors: CBP ACE customs, E2open INTTRA and Intuit QuickBooks, each with mock/live mode, encrypted credentials and a connection test. An internal admin additionally gets Business model, which is the one setting that changes what every other screen means.',
   },
 ]
 
@@ -154,6 +171,8 @@ const SCENARIOS = [
   { need: 'A customer asks where their cargo is', path: 'Track & Trace → find the vessel, or Shipments → search the booking reference' },
   { need: 'A document is stuck', path: 'Documents → filter pending_approval → approve from the shipment page' },
   { need: 'How much is open against a customer', path: 'Invoices → filter open and overdue' },
+  { need: 'What am I earning on this shipment', path: 'Shipments → open it → the facts panel: deal value, commission, and what the producer receives' },
+  { need: 'The commission on one deal is not the house rate', path: 'The shipment carries its own rate. There is no screen for it yet; it is a column on the shipment' },
   { need: 'A partner says they cannot see a shipment', path: 'Settings → Users → confirm their organization is actually a party on that shipment' },
   { need: 'An email arrived with containers and seals to retype', path: 'Deckhand → paste it → check it against the email → copy the block, paste the table into the portal grid, or download the .csv' },
 ]
@@ -270,6 +289,126 @@ export default function GuidePage() {
         </Card>
 
         <Card>
+          <CardHeader
+            title="The money on a shipment"
+            subtitle={
+              vocabulary.showsCommission
+                ? 'One price, and the commission that comes out of it'
+                : 'Freight cost per shipment'
+            }
+          />
+          <div className="space-y-4 px-5 pb-5 pt-4 text-[13px] leading-relaxed text-slate-600">
+            {vocabulary.showsCommission ? (
+              <>
+                <p>
+                  A trader buys from a producer and sells to an importer, and is paid a commission out of the
+                  producer&rsquo;s side. There is{' '}
+                  <strong className="font-semibold text-slate-700">one price, not two.</strong>
+                </p>
+                <div className="overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                  <table className="w-full text-left text-[13px]">
+                    <tbody>
+                      <tr>
+                        <td className="py-1.5 pr-4 text-slate-500">Deal value</td>
+                        <td className="py-1.5 font-medium text-slate-800">
+                          goods + freight + insurance + duty. What the importer is invoiced
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="py-1.5 pr-4 text-slate-500">Commission</td>
+                        <td className="py-1.5 font-medium text-slate-800">deal value × rate. What you keep</td>
+                      </tr>
+                      <tr>
+                        <td className="py-1.5 pr-4 text-slate-500">Producer receives</td>
+                        <td className="py-1.5 font-medium text-slate-800">deal value − commission</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p>
+                  <strong className="font-semibold text-slate-700">The fee comes out of the producer&rsquo;s side, not
+                  on top of the buyer&rsquo;s.</strong>{' '}
+                  The importer pays the headline price either way, so your being in the deal does not make the goods
+                  more expensive. It works like a travel agent paid out of the hotel&rsquo;s rate: the traveller pays
+                  the rack rate, the agent keeps a slice, the hotel nets less.
+                </p>
+                <p>
+                  Only the deal value and the rate are stored. The commission and the producer&rsquo;s share are
+                  worked out each time the shipment is read, so changing a rate moves both together and they can never
+                  disagree. <Code>producer receives + commission = deal value</Code> always holds.
+                </p>
+                <ul className="list-disc space-y-1.5 pl-5">
+                  <li>
+                    The house rate is set once in Settings → Business model. A single shipment may carry its own rate,
+                    which then wins for that shipment only.
+                  </li>
+                  <li>
+                    A shipment with no agreed price reads as <em>not set</em>, never as zero, and is never guessed from
+                    the freight cost. The deal value is optional in the booking wizard for exactly that reason.
+                  </li>
+                  <li>
+                    Your commission never appears on the invoice. That document is addressed to the importer, and what
+                    you kept out of the producer&rsquo;s side is not his business.
+                  </li>
+                </ul>
+              </>
+            ) : (
+              <p>
+                In the freight operator model a shipment carries its freight cost and nothing else. There is no deal
+                value and no commission, because the internal organization is moving other people&rsquo;s cargo for a
+                fee rather than trading on its own account.
+              </p>
+            )}
+
+            <p className="border-t border-slate-100 pt-4">
+              <strong className="font-semibold text-slate-700">Which model is running is a setting.</strong> An
+              internal admin picks it in Settings → Business model, and it is not a personal preference: it applies to
+              the whole workspace and every screen follows it.
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-[13px]">
+                <thead>
+                  <tr className="border-b border-slate-200 text-[11px] uppercase tracking-wide text-slate-400">
+                    <th className="py-2.5 pr-3 font-medium"></th>
+                    <th className="px-3 py-2.5 font-medium">Trader</th>
+                    <th className="px-3 py-2.5 font-medium">Freight operator</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b border-slate-50">
+                    <td className="py-2.5 pr-3 text-slate-500">Counterparties are called</td>
+                    <td className="px-3 py-2.5 text-slate-700">Producer, Importer</td>
+                    <td className="px-3 py-2.5 text-slate-700">Exporter, Consignee</td>
+                  </tr>
+                  <tr className="border-b border-slate-50">
+                    <td className="py-2.5 pr-3 text-slate-500">A shipment shows</td>
+                    <td className="px-3 py-2.5 text-slate-700">Deal value, commission, producer&rsquo;s share</td>
+                    <td className="px-3 py-2.5 text-slate-700">Freight cost</td>
+                  </tr>
+                  <tr className="border-b border-slate-50">
+                    <td className="py-2.5 pr-3 text-slate-500">The invoice bills</td>
+                    <td className="px-3 py-2.5 text-slate-700">The importer, for the deal value</td>
+                    <td className="px-3 py-2.5 text-slate-700">The shipper, for the freight</td>
+                  </tr>
+                  <tr className="last:border-0">
+                    <td className="py-2.5 pr-3 text-slate-500">Counterparty isolation</td>
+                    <td className="px-3 py-2.5 font-medium text-emerald-700">On</td>
+                    <td className="px-3 py-2.5 font-medium text-amber-700">Off</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
+              <strong className="font-semibold">That last row is the reason this setting is admin-only.</strong>{' '}
+              Switching to the freight operator model turns counterparty isolation off, so every partner company on a
+              shipment sees the full party list again. That is right for an operator, whose exporter and consignee are
+              on the same bill of lading and already know each other. It is wrong for a trader with real supplier and
+              customer data loaded.
+            </p>
+          </div>
+        </Card>
+
+        <Card>
           <CardHeader title="Accounts" subtitle="Password for every account: tidelane-demo" />
           <div className="overflow-x-auto px-5 pb-5">
             <table className="w-full text-left text-[13px]">
@@ -282,7 +421,7 @@ export default function GuidePage() {
                 </tr>
               </thead>
               <tbody>
-                {ACCOUNTS.map((a) => (
+                {accounts(vocabulary).map((a) => (
                   <tr key={a.email} className="border-b border-slate-50 align-top last:border-0">
                     <td className="py-2.5 pr-3 font-mono text-[12px] text-brand-600">{a.email}</td>
                     <td className="px-3 py-2.5 font-medium text-slate-700">{a.role}</td>
@@ -337,7 +476,7 @@ export default function GuidePage() {
         <Card>
           <CardHeader title="Module walkthrough" />
           <div className="divide-y divide-slate-50">
-            {MODULES.map(({ icon: Icon, name, text }) => (
+            {modules(vocabulary).map(({ icon: Icon, name, text }) => (
               <div key={name} className="flex gap-4 px-5 py-4">
                 <span className="mt-0.5 flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-brand-50 text-brand-600">
                   <Icon size={17} />
