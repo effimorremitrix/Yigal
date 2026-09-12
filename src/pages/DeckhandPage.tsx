@@ -141,7 +141,13 @@ function DownloadCsvButton({ csv, fileName }: { csv: string; fileName: string })
 function OutputTable({ extraction }: { extraction: Extraction }) {
   const rows = outputRows(extraction)
   const summary = summarizeOutput(extraction)
-  const clean = summary.rowsWithoutSeal === 0 && summary.unpairedSeals === 0 && summary.checkDigitFailures === 0 && summary.malformed === 0
+  const clean =
+    summary.rowsWithoutSeal === 0 &&
+    summary.unpairedSeals === 0 &&
+    summary.checkDigitFailures === 0 &&
+    summary.malformed === 0 &&
+    summary.duplicatesMerged === 0 &&
+    summary.sealConflicts === 0
 
   const counts = [
     `${summary.rows} row${summary.rows === 1 ? '' : 's'}`,
@@ -149,6 +155,14 @@ function OutputTable({ extraction }: { extraction: Extraction }) {
     `${summary.unpairedSeals} unpaired seal${summary.unpairedSeals === 1 ? '' : 's'} left out of this output`,
     ...(summary.checkDigitFailures > 0 ? [`${summary.checkDigitFailures} failing the ISO 6346 check digit`] : []),
     ...(summary.malformed > 0 ? [`${summary.malformed} not in container number format`] : []),
+    ...(summary.duplicatesMerged > 0
+      ? [`${summary.duplicatesMerged} repeat mention${summary.duplicatesMerged === 1 ? '' : 's'} merged into the row above it`]
+      : []),
+    ...(summary.sealConflicts > 0
+      ? [
+          `${summary.sealConflicts} container${summary.sealConflicts === 1 ? '' : 's'} given two different seals, so the seal cell is blank and must be filled from the source`,
+        ]
+      : []),
   ]
 
   return (
@@ -189,10 +203,22 @@ function OutputTable({ extraction }: { extraction: Extraction }) {
                           not paired
                         </span>
                       )}
+                      {row.mentions > 1 && (
+                        <span
+                          title="The document named this container more than once. One row, not two."
+                          className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-500"
+                        >
+                          {row.mentions} mentions merged
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="px-2 py-2">
-                    {row.seal === '' ? (
+                    {row.sealConflict ? (
+                      <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700">
+                        two different seals given, fill this from the source
+                      </span>
+                    ) : row.seal === '' ? (
                       <span className="text-[12px] italic text-slate-400">no seal in this document</span>
                     ) : (
                       <span className="font-mono text-[13px] text-slate-700">{row.seal}</span>

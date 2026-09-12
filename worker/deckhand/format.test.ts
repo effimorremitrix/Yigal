@@ -114,6 +114,87 @@ test('an extraction with nothing in it produces no rows rather than a blank one'
   assert.equal(summarizeOutput(x).rows, 0)
 })
 
+test('a container named twice becomes one row, not a duplicate upload line', () => {
+  // The depot list, then a sentence of prose naming the same box. One container, one row.
+  const x = extraction({ pairs: [pair(C1, 'SL-44821'), pair(C2, 'SL-44822'), pair(C1, null)] })
+
+  assert.deepEqual(tsvLines(x), [`${C1}\tSL-44821`, `${C2}\tSL-44822`])
+
+  const rows = outputRows(x)
+  assert.equal(rows.length, 2)
+  assert.equal(rows[0].mentions, 2)
+  assert.equal(rows[0].seal, 'SL-44821', 'the mention that carried the seal wins over the one that did not')
+  assert.equal(rows[0].sealConflict, false)
+  assert.equal(summarizeOutput(x).duplicatesMerged, 1)
+  assert.equal(summarizeOutput(x).rows, 2)
+})
+
+test('the seal fills in from whichever mention carried one, in either order', () => {
+  // Prose first, list second: the merge must not depend on which came first.
+  const x = extraction({ pairs: [pair(C1, null), pair(C1, 'SL-44821')] })
+
+  assert.deepEqual(tsvLines(x), [`${C1}\tSL-44821`])
+  assert.equal(summarizeOutput(x).rowsWithoutSeal, 0)
+  assert.equal(summarizeOutput(x).duplicatesMerged, 1)
+})
+
+test('the same seal stated twice is not a conflict', () => {
+  const x = extraction({ pairs: [pair(C1, 'SL-44821'), pair(C1, 'SL-44821')] })
+
+  assert.deepEqual(tsvLines(x), [`${C1}\tSL-44821`])
+  assert.equal(summarizeOutput(x).sealConflicts, 0)
+  assert.equal(summarizeOutput(x).duplicatesMerged, 1)
+})
+
+test('two different seals for one container empties the cell rather than picking one', () => {
+  const x = extraction({ pairs: [pair(C1, 'SL-44821'), pair(C1, 'SL-99999')] })
+
+  // Neither seal is used. Picking either would be the exact failure this whole module exists
+  // to prevent, and a blank cell is recoverable where a wrong seal is not.
+  assert.deepEqual(tsvLines(x), [`${C1}\t`])
+  assert.ok(!formatTsv(x).includes('SL-44821'))
+  assert.ok(!formatTsv(x).includes('SL-99999'))
+
+  const rows = outputRows(x)
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].sealConflict, true)
+  assert.equal(rows[0].mentions, 2)
+
+  const summary = summarizeOutput(x)
+  assert.equal(summary.sealConflicts, 1)
+  assert.equal(summary.rowsWithoutSeal, 1)
+})
+
+test('a third mention cannot break a tie that is already contested', () => {
+  const x = extraction({ pairs: [pair(C1, 'SL-44821'), pair(C1, 'SL-99999'), pair(C1, 'SL-44821')] })
+
+  assert.deepEqual(tsvLines(x), [`${C1}\t`])
+  assert.equal(outputRows(x)[0].sealConflict, true)
+  assert.equal(summarizeOutput(x).duplicatesMerged, 2)
+})
+
+test('a container that is both paired and listed unpaired keeps the pairing', () => {
+  const x = extraction({
+    pairs: [pair(C1, 'SL-44821')],
+    unpaired: { containers: [container(C1), container(C2)], seals: [] },
+  })
+
+  assert.deepEqual(tsvLines(x), [`${C1}\tSL-44821`, `${C2}\t`])
+
+  const rows = outputRows(x)
+  assert.equal(rows[0].origin, 'pair', 'paired anywhere means paired')
+  assert.equal(rows[0].seal, 'SL-44821')
+  assert.equal(rows[1].origin, 'unpaired_container')
+})
+
+test('merging never invents a pairing across two different containers', () => {
+  // The guard rail: distinct containers stay distinct no matter how the seals fall.
+  const x = extraction({ pairs: [pair(C1, null), pair(C2, 'SL-44822'), pair(C3, null)] })
+
+  assert.deepEqual(tsvLines(x), [`${C1}\t`, `${C2}\tSL-44822`, `${C3}\t`])
+  assert.equal(summarizeOutput(x).duplicatesMerged, 0)
+})
+
 test('every row is exactly two columns and the line endings are CRLF', () => {
   const x = extraction({
     pairs: [pair(C1, 'SL-44821'), pair(C2, null)],
