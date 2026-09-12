@@ -850,4 +850,15 @@ test('user guide renders logged out with accounts, workflow and Deckhand', async
   // Deckhand's own section, not just its row in the module list.
   await expect(page.getByText('Stop retyping shipment and seal numbers out of email')).toBeVisible()
   await expect(page.getByText('Common scenarios')).toBeVisible()
+
+  // The guide is read before login, so it has no business profile and falls back to the default
+  // model. That is trader, so the money section explains the commission and names what it costs to
+  // switch away from it.
+  await expect(page.getByText('The money on a shipment')).toBeVisible()
+  await expect(page.getByText('One price, and the commission that comes out of it')).toBeVisible()
+  await expect(page.getByText('producer receives + commission = deal value')).toBeVisible()
+  await expect(page.getByText(/Switching to the freight operator model turns counterparty isolation off/)).toBeVisible()
+  // Partner org labels follow the business model rather than the stored transport role.
+  await expect(page.getByText('Atlas Polymers (producer)')).toBeVisible()
+  await expect(page.getByText('Northline Imports (importer)')).toBeVisible()
 })
