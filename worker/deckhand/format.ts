@@ -102,31 +102,59 @@ export interface OutputRow {
   seal: string
   status: ContainerStatus
   origin: RowOrigin
+  /** How many times the source mentioned this container. More than one means rows were merged. */
+  mentions: number
+  /** The source claimed two different seals for this container, so the cell is left empty. */
+  sealConflict: boolean
 }
 
 /**
- * One row per pairing, then one row per unpaired container with an empty seal cell.
- * Unpaired seals are deliberately absent: they belong to a container we cannot name.
+ * One row per container, in the order the source first mentioned it.
+ *
+ * A container number turns up more than once in a real email: in the depot list, and again
+ * in a sentence of prose ("note that MSKU7293415 is the reefer"). That is one container,
+ * not two. In the block a human reads, the repeat is visible and harmless; as two identical
+ * rows in an upload it is a duplicate line the portal will either reject or, worse, accept.
+ * So repeat mentions collapse onto the row that first named the container, and the seal is
+ * taken from whichever mention carried one.
+ *
+ * The exception is the case that must never be guessed: two mentions claiming DIFFERENT
+ * seals for one container. There is no evidence for choosing between them, so neither is
+ * used, the cell is left empty and the row is flagged. A blank cell is recoverable in
+ * thirty seconds; the wrong seal on a container is not recoverable at all.
+ *
+ * Unpaired seals remain absent from every row: they belong to a container we cannot name.
  */
 export function outputRows(x: Extraction): OutputRow[] {
-  return [
-    ...x.pairs.map(
-      (p): OutputRow => ({
-        container: p.container.normalized ?? p.container.raw,
-        seal: p.seal?.raw ?? '',
-        status: p.container.status,
-        origin: 'pair',
-      }),
-    ),
-    ...x.unpaired.containers.map(
-      (c): OutputRow => ({
-        container: c.normalized ?? c.raw,
-        seal: '',
-        status: c.status,
-        origin: 'unpaired_container',
-      }),
-    ),
-  ]
+  const rows: OutputRow[] = []
+  const byContainer = new Map<string, OutputRow>()
+
+  const add = (container: string, seal: string, status: ContainerStatus, origin: RowOrigin): void => {
+    const seen = byContainer.get(container)
+    if (seen === undefined) {
+      const row: OutputRow = { container, seal, status, origin, mentions: 1, sealConflict: false }
+      rows.push(row)
+      byContainer.set(container, row)
+      return
+    }
+
+    seen.mentions += 1
+    // Once the seal is contested it stays contested; a third mention cannot break the tie.
+    if (seen.sealConflict) return
+    if (seal === '' || seal === seen.seal) return
+    if (seen.seal === '') {
+      seen.seal = seal
+      return
+    }
+    seen.seal = ''
+    seen.sealConflict = true
+  }
+
+  // Pairings first, so a container that was paired anywhere keeps the 'pair' origin.
+  for (const p of x.pairs) add(p.container.normalized ?? p.container.raw, p.seal?.raw ?? '', p.container.status, 'pair')
+  for (const c of x.unpaired.containers) add(c.normalized ?? c.raw, '', c.status, 'unpaired_container')
+
+  return rows
 }
 
 /** What the screen must state above the table, so an empty cell is never mistaken for a clean run. */
@@ -140,6 +168,10 @@ export interface OutputSummary {
   checkDigitFailures: number
   /** Not a container number shape at all. */
   malformed: number
+  /** Repeat mentions of a container that collapsed onto a row already in the output. */
+  duplicatesMerged: number
+  /** Containers the source gave two different seals; their seal cell is blank, not guessed. */
+  sealConflicts: number
 }
 
 export function summarizeOutput(x: Extraction): OutputSummary {
@@ -150,6 +182,8 @@ export function summarizeOutput(x: Extraction): OutputSummary {
     unpairedSeals: x.unpaired.seals.length,
     checkDigitFailures: rows.filter((r) => r.status === 'invalid').length,
     malformed: rows.filter((r) => r.status === 'malformed').length,
+    duplicatesMerged: rows.reduce((n, r) => n + r.mentions - 1, 0),
+    sealConflicts: rows.filter((r) => r.sealConflict).length,
   }
 }
 

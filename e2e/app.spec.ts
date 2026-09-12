@@ -529,14 +529,17 @@ const ALIGNED_EMAIL = [
   'TGHU7654320    | Seal No: SL-44822',
 ].join('\n')
 
-// Two proven pairings, plus a loose seal list that belongs to no container we can name.
-// The table output must carry the two pairings and must not invent a row for the loose seals.
+// Two proven pairings, a prose sentence naming one of them a second time, and a loose seal
+// list that belongs to no container we can name. The table must carry the two pairings, must
+// not turn the repeat into a third row, and must not invent a row for the loose seals.
 const MIXED_EMAIL = [
   'Booking Ref: SHPX-99122',
   '',
   'Container      | Seal',
   'CSQU3054383    | Seal No: SL-44821',
   'TGHU7654320    | Seal No: SL-44822',
+  '',
+  'Please note that CSQU3054383 is the reefer unit on this booking.',
   '',
   'Spare seals: SL-99001, SL-99002',
 ].join('\n')
@@ -609,7 +612,9 @@ test('deckhand table mode emits one row per pairing and no row for an unpaired s
 
   const table = page.getByTestId('deckhand-output-table')
   await expect(table).toBeVisible()
-  await expect(page.getByTestId('deckhand-output-row')).toHaveCount(2) // two pairings, two rows
+  // Two pairings, two rows. The prose repeat of CSQU3054383 merges rather than becoming a
+  // third row, because a duplicate container line in a portal upload is a real defect.
+  await expect(page.getByTestId('deckhand-output-row')).toHaveCount(2)
 
   const rendered = await table.innerText()
   expect(rendered).toMatch(/CSQU3054383[\s\S]*SL-44821/)
@@ -619,7 +624,9 @@ test('deckhand table mode emits one row per pairing and no row for an unpaired s
   expect(rendered).not.toContain('SL-99002')
 
   // And the screen says so above the table rather than leaving the gap to be discovered later.
-  await expect(page.getByTestId('deckhand-output-summary')).toContainText('2 unpaired seals left out of this output')
+  const summary = page.getByTestId('deckhand-output-summary')
+  await expect(summary).toContainText('2 unpaired seals left out of this output')
+  await expect(summary).toContainText('1 repeat mention merged')
 })
 
 test('deckhand is internal-only and writes nothing', async ({ page, request }) => {
