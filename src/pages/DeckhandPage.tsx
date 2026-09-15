@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
-import { AlertTriangle, Check, Copy, Download, FileUp, Loader2, Wand2 } from 'lucide-react'
+import { AlertTriangle, Check, Copy, Download, FileUp, Loader2, Table2, Wand2 } from 'lucide-react'
 import { Card, CardHeader } from '../components/ui/Card'
+import { readHtmlClipboard } from '../lib/clipboardTable'
 import type { ContainerStatus } from '../../worker/deckhand/containers'
 import { OUTPUT_COLUMNS, csvFileName, formatCsv, formatTsv, outputRows, summarizeOutput } from '../../worker/deckhand/format'
 import type { Extraction, Field, Pairing } from '../../worker/deckhand/types'
@@ -69,7 +70,13 @@ const statusChip = (status: ContainerStatus) =>
  */
 const OUTPUT_MODES = [
   { id: 'block', label: 'Block', title: 'Paste-ready block', subtitle: 'Read it against the email before it goes anywhere.' },
-  { id: 'table', label: 'Table', title: 'Paste-ready table', subtitle: 'Two columns, tab separated. Copy all, then paste into the portal grid in one action.' },
+  {
+    id: 'table',
+    label: 'Table',
+    title: 'Paste-ready table',
+    subtitle:
+      'Container number and seal number, tab separated. Copy all for a grid that takes a whole block, or one column at a time for a grid that does not.',
+  },
   { id: 'file', label: 'File', title: 'Container details file', subtitle: 'The same two columns as a .csv, built here in the browser and never stored.' },
 ] as const
 
@@ -240,9 +247,57 @@ export default function DeckhandPage() {
   const [error, setError] = useState('')
   const [result, setResult] = useState<{ extraction: Extraction; block: string } | null>(null)
   // Whichever shape he needed last is almost certainly the shape he needs next, so the mode
-  // survives an extraction. Block stays the default on first load.
+  // survives an extraction. Block stays the default on first load, until a paste turns out
+  // to be a table — see the note on pickMode below.
   const [mode, setMode] = useState<OutputMode>('block')
+  const [modeChosen, setModeChosen] = useState(false)
+  const [pasteNote, setPasteNote] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
+
+  /**
+   * Keep the table the clipboard is already carrying.
+   *
+   * A <textarea> takes the plain-text flavour of a paste, which is the mail client's own
+   * flattening of the table — one cell per line in some clients, a run of spaces in others.
+   * Either way the container and its seal stop being on the same line, and a reader that
+   * refuses to pair across lines (which this one does, deliberately) then has nothing to
+   * pair. So when the clipboard also carries `text/html` with a real table in it, that is
+   * what goes into the box: same cells, same rows, tab separated.
+   *
+   * It is written into the visible box rather than kept aside, because what Yigal checks
+   * before pressing Extract has to be the same text the server reads.
+   */
+  function onPaste(event: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const html = event.clipboardData.getData('text/html')
+    const pasted = html ? readHtmlClipboard(html) : null
+    if (!pasted) {
+      setPasteNote('')
+      return
+    }
+
+    event.preventDefault()
+    const field = event.currentTarget
+    const from = field.selectionStart ?? text.length
+    const to = field.selectionEnd ?? from
+    const caret = from + pasted.text.length
+    setText(`${text.slice(0, from)}${pasted.text}${text.slice(to)}`)
+    setPasteNote(
+      pasted.tables
+        .map((t) => `${t.rows} row${t.rows === 1 ? '' : 's'} x ${t.columns} column${t.columns === 1 ? '' : 's'}`)
+        .join(', '),
+    )
+    // React owns the value, so the caret has to be put back after it re-renders.
+    requestAnimationFrame(() => field.setSelectionRange(caret, caret))
+  }
+
+  /**
+   * When the identifiers came out of a table, the two-column output is what he is going to
+   * want — that is the whole reason the table was pasted. Offer it, but only until he picks
+   * a mode himself, after which his choice stands.
+   */
+  const pickMode = (extraction: Extraction) => {
+    if (!modeChosen && extraction.source === 'grid') setMode('table')
+  }
 
   async function run(body: BodyInit, headers?: HeadersInit) {
     setBusy(true)
@@ -252,6 +307,7 @@ export default function DeckhandPage() {
       const payload = (await r.json()) as { extraction?: Extraction; block?: string; error?: string }
       if (!r.ok) throw new Error(payload.error ?? `Extraction failed (${r.status})`)
       setResult({ extraction: payload.extraction!, block: payload.block! })
+      pickMode(payload.extraction!)
     } catch (err) {
       setResult(null)
       setError(err instanceof Error ? err.message : 'Extraction failed')
@@ -263,6 +319,11 @@ export default function DeckhandPage() {
   const x = result?.extraction
   const tsv = useMemo(() => (x ? formatTsv(x) : ''), [x])
   const csv = useMemo(() => (x ? formatCsv(x) : ''), [x])
+  // One column at a time, for a portal grid that will not take a two-column block. Both are
+  // cut from the same rows and in the same order, so row n of one is row n of the other.
+  const columns = useMemo(() => (x ? outputRows(x) : []), [x])
+  const containerColumn = useMemo(() => columns.map((r) => r.container).join('\r\n'), [columns])
+  const sealColumn = useMemo(() => columns.map((r) => r.seal).join('\r\n'), [columns])
   const modeCopy = OUTPUT_MODES.find((m) => m.id === mode)!
 
   return (
@@ -276,6 +337,7 @@ export default function DeckhandPage() {
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
+            onPaste={onPaste}
             rows={9}
             placeholder="Paste the email here, including any container and seal list…"
             data-testid="deckhand-text"
@@ -315,6 +377,17 @@ export default function DeckhandPage() {
             />
             <span className="text-[11px] text-slate-400">Nothing is saved. Deckhand reads the document and forgets it.</span>
           </div>
+          {pasteNote && (
+            <div
+              data-testid="deckhand-paste-note"
+              className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2 text-[12px] text-slate-600"
+            >
+              <Table2 size={13} className="mt-0.5 flex-none" />
+              <span>
+                Pasted as a table ({pasteNote}), so each container stays on the row its seal is on. Check it against the email before you extract.
+              </span>
+            </div>
+          )}
           {error && (
             <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-[12px] text-red-700">
               <AlertTriangle size={14} className="mt-0.5 flex-none" />
@@ -342,9 +415,21 @@ export default function DeckhandPage() {
           <Card>
             <CardHeader title={modeCopy.title} subtitle={modeCopy.subtitle} />
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
-              <OutputModeControl value={mode} onChange={setMode} />
+              <OutputModeControl
+                value={mode}
+                onChange={(next) => {
+                  setModeChosen(true)
+                  setMode(next)
+                }}
+              />
               {mode === 'block' && <CopyButton text={result.block} label="Copy all" />}
-              {mode === 'table' && <CopyButton text={tsv} label="Copy all" />}
+              {mode === 'table' && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <CopyButton text={containerColumn} label="Containers" />
+                  <CopyButton text={sealColumn} label="Seals" />
+                  <CopyButton text={tsv} label="Copy all" />
+                </div>
+              )}
               {mode === 'file' && <DownloadCsvButton csv={csv} fileName={csvFileName(x)} />}
             </div>
             {mode === 'block' ? (

@@ -744,10 +744,119 @@ const UNALIGNED_EMAIL = [
   'Seals: SL-44821, SL-44822',
 ].join('\n')
 
+/**
+ * The DOC CUT table as a mail client puts it on the clipboard: a real <table>, wrapped in the
+ * layout table Outlook adds around message bodies. Ten containers, ten seals, and three
+ * columns of the sender's own bookkeeping that must not be mistaken for either.
+ */
+const DOC_CUT_ROWS = [
+  ['3671', 'MSNU7007075', 'HS03874', 'UL-6611448', 'EBKG15117043', 'CT SSR 23/25'],
+  ['3671.01', 'MSNU9690566', 'HS03875', 'UL-6611449', 'EBKG15117043', 'CT SSR 23/25'],
+  ['3671.02', 'FFAU1762240', 'HS03876', 'UL-7687051', 'EBKG15117043', 'CT SSR 23/25'],
+  ['3671.03', 'TGBU4625141', 'HS03877', 'UL-7687052', 'EBKG15117043', 'CT SSR 23/25'],
+  ['3671.04', 'FFAU1945597', 'HS03878', 'UL-7687053', 'EBKG15117043', 'CT SSR 23/25'],
+  ['3671.05', 'MSDU7406753', 'HS03879', 'UL-7687054', 'EBKG15117043', 'CT SSR 23/25'],
+  ['3671.06', 'MSNU5805374', 'HS03880', 'UL-7687055', 'EBKG15117043', 'CT SSR 23/25'],
+  ['3671.07', 'MSMU6012880', 'HS03881', 'UL-7687056', 'EBKG15117043', 'CT SSR 23/25'],
+  ['3671.08', 'UETU7107482', 'HS03882', 'UL-7687057', 'EBKG15117043', 'CT SSR 23/25'],
+  ['3671.09', 'MEDU7391281', 'HS03883', 'UL-7687058', 'EBKG15117043', 'CT SSR 23/25'],
+]
+
+const DOC_CUT_HTML = `<div><table><tr><td><p><b>Subject:</b> DOC CUT</p>
+<table border="1">
+<tr>${['GALCO', 'Container #', 'LOT#:', 'SEAL#', 'BOOKING#', 'VERITY'].map((h) => `<th>${h}</th>`).join('')}</tr>
+${DOC_CUT_ROWS.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('\n')}
+</table></td></tr></table></div>`
+
+/**
+ * What the mail client offers as `text/plain` for that same table: every cell on its own
+ * line, row structure gone. This is the flavour a <textarea> takes by default, and taking it
+ * is what left ten containers with no seal beside them.
+ */
+const DOC_CUT_FLATTENED = ['GALCO', 'Container #', 'LOT#:', 'SEAL#', 'BOOKING#', 'VERITY', ...DOC_CUT_ROWS.flat()].join('\n')
+
+/**
+ * Paste both clipboard flavours at once, exactly as the mail client would. Evaluated as a
+ * string because the e2e suite is type-checked without the DOM lib, the same way the booking
+ * and fetch helpers above are.
+ */
+async function pasteBothFlavours(page: Page, html: string, plain: string) {
+  await page.getByTestId('deckhand-text').waitFor()
+  await page.evaluate(`(() => {
+    const box = document.querySelector('[data-testid="deckhand-text"]')
+    box.focus()
+    const data = new DataTransfer()
+    data.setData('text/html', ${JSON.stringify(html)})
+    data.setData('text/plain', ${JSON.stringify(plain)})
+    box.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+  })()`)
+}
+
+test('deckhand keeps the table when an html table is pasted, and reads every seal', async ({ page }) => {
+  await login(page, 'effi.mor@galco-intl.com')
+  await page.goto('/deckhand')
+  await pasteBothFlavours(page, DOC_CUT_HTML, DOC_CUT_FLATTENED)
+
+  // The html flavour won: rows are rows again, not one cell per line.
+  await expect(page.getByTestId('deckhand-paste-note')).toContainText('11 rows x 6 columns')
+  const pasted = await page.getByTestId('deckhand-text').inputValue()
+  expect(pasted).toContain('DOC CUT')
+  expect(pasted).toContain('MSNU7007075\tHS03874\tUL-6611448')
+
+  await page.getByTestId('deckhand-extract').click()
+  await expect(page.getByTestId('deckhand-output-table')).toBeVisible()
+
+  // The defect this test exists for: ten containers came out, and so did ten seals.
+  await expect(page.getByTestId('deckhand-output-row')).toHaveCount(10)
+  const rendered = await page.getByTestId('deckhand-output-table').innerText()
+  for (const row of DOC_CUT_ROWS) expect(rendered).toContain(row[1])
+  for (const row of DOC_CUT_ROWS) expect(rendered).toContain(row[3])
+  expect(rendered).not.toContain('no seal in this document')
+  // The bookkeeping columns are not identifiers and must not reach the output.
+  expect(rendered).not.toContain('HS03874')
+  expect(rendered).not.toContain('CT SSR')
+
+  // A table was read, so the two-column output is what is on screen without asking for it.
+  await expect(page.getByRole('radio', { name: 'Table' })).toBeChecked()
+  await expect(page.getByTestId('deckhand-output-summary')).toContainText('0 with no seal number')
+})
+
+test('deckhand recovers the rows when only the flattened text is pasted', async ({ page }) => {
+  await login(page, 'effi.mor@galco-intl.com')
+  // No html flavour at all: the reader has to rebuild the rows, and may only do so because
+  // every container number in the rebuilt container column passes its ISO 6346 check digit.
+  const block = await deckhandExtract(page, DOC_CUT_FLATTENED)
+  for (const row of DOC_CUT_ROWS) expect(block).toMatch(new RegExp(`${row[1]}\\s+seal ${row[3]}`))
+  expect(block).toContain('EBKG15117043')
+})
+
+test('deckhand copies one column at a time for a grid that will not take two', async ({ page }) => {
+  await login(page, 'effi.mor@galco-intl.com')
+  await page.goto('/deckhand')
+  await pasteBothFlavours(page, DOC_CUT_HTML, DOC_CUT_FLATTENED)
+  await page.getByTestId('deckhand-extract').click()
+  await expect(page.getByTestId('deckhand-output-table')).toBeVisible()
+
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.getByRole('button', { name: 'Copy Containers' }).click()
+  const containers = (await page.evaluate('navigator.clipboard.readText()')) as string
+  await page.getByRole('button', { name: 'Copy Seals' }).click()
+  const seals = (await page.evaluate('navigator.clipboard.readText()')) as string
+
+  // Same rows, same order, so row n of one column is row n of the other.
+  expect(containers.split('\r\n')).toEqual(DOC_CUT_ROWS.map((r) => r[1]))
+  expect(seals.split('\r\n')).toEqual(DOC_CUT_ROWS.map((r) => r[3]))
+})
+
 async function deckhandExtract(page: Page, text: string) {
   await page.goto('/deckhand')
   await page.getByTestId('deckhand-text').fill(text)
   await page.getByTestId('deckhand-extract').click()
+  // Reading a table selects the two-column output on arrival, since that is what a pasted
+  // table is for. These tests are about the block, so ask for it rather than assume it.
+  const block = page.getByRole('radio', { name: 'Block' })
+  await expect(block).toBeAttached()
+  if (!(await block.isChecked())) await page.getByText('Block', { exact: true }).click()
   await expect(page.getByTestId('deckhand-block')).toBeVisible()
   return page.getByTestId('deckhand-block').innerText()
 }
