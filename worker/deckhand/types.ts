@@ -69,7 +69,12 @@ export interface Extraction {
   unpaired: Unpaired
   /** Anything the reader must know before trusting the block above. */
   warnings: string[]
-  source: 'stub' | 'llm'
+  /**
+   * Which reader produced this. `grid` means the containers and seals came out of a table
+   * read by its own column headings, which is the strongest evidence there is and needs no
+   * model; the scalar fields around it may still have come from one.
+   */
+  source: 'stub' | 'llm' | 'grid'
 }
 
 export const emptyExtraction = (source: Extraction['source'], warnings: string[] = []): Extraction => ({

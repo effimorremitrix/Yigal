@@ -64,6 +64,39 @@ Anything I am unsure of: ... (flagged explicitly)
 - Output is read by a human before it goes anywhere. That is a feature, not a limitation.
 - Container numbers follow ISO 6346 and carry a check digit. Validate it. A failed check digit is a loud flag, not a silent correction.
 
+### Tables, which is what most of this actually is
+
+The first real paste was a "DOC CUT" table: `GALCO | Container # | LOT#: | SEAL# | BOOKING# | VERITY`,
+ten rows. Every container came out and not one seal did. Two causes, both now fixed:
+
+1. **The paste lost the table.** A `<textarea>` takes the `text/plain` flavour of a paste, which
+   is the mail client's own flattening of the table — one cell per line in some clients, a run of
+   spaces in others. The container and its seal stopped being on the same line, and a reader that
+   refuses to pair across lines then has nothing to pair. The page now reads the `text/html`
+   flavour the clipboard is also carrying, cuts up the real `<table>`, and writes tab separated
+   rows into the box. `src/lib/clipboardTable.ts`.
+2. **A seal was only recognised behind a label.** `Seal No: X` was read; a column headed `SEAL#`
+   was not, because nothing in Deckhand looked at column headings at all. There is now a table
+   reader that resolves columns by their heading — `worker/deckhand/grid.ts` — so a table is read
+   exactly, by rules, with no model call and nothing to hallucinate. A table whose columns are in
+   a different order reads the same, because the heading is what is matched, never the position.
+
+The table reader runs first. When the paste is nothing but a table, no model is called at all.
+When there is prose around it, the model still reads the prose for vessel, voyage and ports, and
+the table wins on containers and seals.
+
+**Known gap, stated honestly:** plain text whose columns were collapsed to single spaces
+(`MSNU7007075 HS03874 UL-6611448`) is still handed to the model, because there is no reliable way
+to tell a column break from a space inside a cell. The `text/html` path means this should rarely
+be reached from a real mail client, but it is not covered by the deterministic reader.
+
+**The one rule that did not bend:** a seal reaches a container only through the row they share.
+A table that arrived one cell per line is rebuilt, but only when the rebuild proves itself — the
+heading must be N cells, the remaining cells must be an exact multiple of N, and every rebuilt row
+must hold a container number that passes its ISO 6346 check digit. Any failure abandons the whole
+rebuild rather than emitting the rows that happened to work; nine good rows out of ten is a grid
+that has silently shifted, not nine good rows.
+
 **Delivery:** simplest thing that works on his machine on the morning of 25 September. A page in Tidelane, or a standalone worker endpoint, or a paste box. Do not architect this. It should be usable the same day it is built.
 
 **Why this is 80 percent of the value:** the retyping is the cost, not the navigating. He already knows where the INTTRA form is.
